@@ -14,7 +14,7 @@ File clutters & heterogeneous files created in collaborative work result in inef
   - File as unit of knowledge, allowing virtual files projected from applications
   - Allow files from multi source (local fs, cloud, web url)
 * Effective knowledge finding
-  - Personal organization vs public view of directory
+  - Personal organization vs public view of directory [*]
   - Gather files by topic, file stack, editable/exported type
   - Browse by hierachy as if browsing a normal directory
 * Unlimited knowledge creation

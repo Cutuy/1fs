@@ -1,0 +1,9 @@
+#pragma once
+#include <projectedfslib.h>
+
+PRJ_START_DIRECTORY_ENUMERATION_CB MyStartEnumCallback;
+PRJ_END_DIRECTORY_ENUMERATION_CB MyEndEnumCallback;
+PRJ_GET_DIRECTORY_ENUMERATION_CB MyGetEnumCallback;
+PRJ_GET_PLACEHOLDER_INFO_CB MyGetPlaceholderCallback;
+PRJ_GET_FILE_DATA_CB MyGetFileDataCallback;
+
