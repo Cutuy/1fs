@@ -12,6 +12,8 @@
 #define DstName LR"(A:\root\)"
 
 const GUID instanceId = { 0xA2299C9C, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
+//const GUID instanceId = { 0xA2299C8C, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
+
 PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT instanceHandle;
 PRJ_CALLBACKS callbackTable2 = {
     MyStartEnumCallback,
@@ -19,8 +21,8 @@ PRJ_CALLBACKS callbackTable2 = {
     MyGetEnumCallback,
     MyGetPlaceholderCallback,
     MyGetFileDataCallback,
-    nullptr,
-    nullptr,
+    MyQueryFileNameCallback,
+    MyNotificationCallback,
     nullptr
 };
 extern PrjFsSessionStore gSessStore = PrjFsSessionStore(SrcName);
@@ -28,18 +30,34 @@ extern PrjFsSessionStore gSessStore = PrjFsSessionStore(SrcName);
 int main()
 {
     std::cout << "Hello World!\n";
+
+    // Mark as placeholder, or the root would not be a reparse point
     HRESULT hr;
-    //hr = PrjMarkDirectoryAsPlaceholder(DstName, nullptr, nullptr, &instanceId);
+    hr = PrjMarkDirectoryAsPlaceholder(DstName, nullptr, nullptr, &instanceId);
     
+    PRJ_NOTIFICATION_MAPPING notificationMappings[1];
+    notificationMappings[0].NotificationRoot = L"";
+    notificationMappings[0].NotificationBitMask = 
+        PRJ_NOTIFY_PRE_RENAME | PRJ_NOTIFY_FILE_RENAMED | PRJ_NOTIFY_NEW_FILE_CREATED | PRJ_NOTIFY_PRE_DELETE | PRJ_NOTIFY_PRE_SET_HARDLINK | PRJ_NOTIFY_FILE_PRE_CONVERT_TO_FULL
+        ;
+
+    PRJ_STARTVIRTUALIZING_OPTIONS options = {};
+    options.NotificationMappings = notificationMappings;
+    options.NotificationMappingsCount = ARRAYSIZE(notificationMappings);
+
     hr = PrjStartVirtualizing(DstName,
         &callbackTable2,
         nullptr,
-        nullptr,
+        &options,
         &instanceHandle);
     if (FAILED(hr)) 
     {
         printf_s("[%s] PrjStartVirtualizing failed with %ld", __func__, hr);
     }
+
+    // TODO Entering "tracking" mode, where any file moves within src
+    // will be tracked and persisted for future virtualizations.
+
     while (1);
 }
 

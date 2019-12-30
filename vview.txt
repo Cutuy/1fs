@@ -16,3 +16,6 @@ Effective knowledge finding > Personal organization vs public view of directory
 Refactor required to correctly address diff between "file path" from projfs and win32
 Code quality update
 (later) Encapsulate in a class/lib that runs as a console app
+
+## Notes (12/30)
+- It seems ProjFS does not support rename/move of a directory. This, however, is crtical to our feature...

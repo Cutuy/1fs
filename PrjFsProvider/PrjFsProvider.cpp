@@ -49,30 +49,26 @@ void PrjFsSessionStore::FreeSession(LPCGUID lpcGuid)
 	}
 }
 
+int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
+{
+	// Let's forget the loops & priorities for remaps now; assuming they do not have conflict of scopes at all
+	PrjFsMap map;
+	lstrcpyW(map.FromPath, from);
+	lstrcpyW(map.ToPath, to);
+
+	auto ptr = this->remaps.insert(map);
+	if (!ptr.second)
+	{
+		printf_s("[%s] key %ls already exists", __func__, from);
+	}
+
+	return 0;
+}
+
 LPCWSTR PrjFsSessionStore::GetRoot()
 {
 	return srcName;
 }
-
-void PrjFsSessionRuntime::ClearPathBuff()
-{
-	memset(this->_mPathBuff, 0, PATH_BUFF_LEN);
-}
-
-void PrjFsSessionRuntime::AppendPathBuff(PCWSTR relPath)
-{
-	if (lstrlenW(relPath))
-	{
-		assert(lstrlenW(relPath) + lstrlenW(this->_mPathBuff) <= PATH_BUFF_LEN);
-		lstrcatW(this->_mPathBuff, relPath);
-	}
-}
-
-LPCWSTR PrjFsSessionRuntime::GetPath()
-{
-	return this->_mPathBuff;
-}
-
 
 VOID CALLBACK FileIOCompletionRoutine(
 	__in  DWORD dwErrorCode,
@@ -132,18 +128,17 @@ HRESULT MyGetEnumCallback(
 	*/
 
 	// Build absolute path
-	lpSess->ClearPathBuff();
-	lpSess->AppendPathBuff(gSessStore.GetRoot()); // "C:\root\"
-	lpSess->AppendPathBuff(callbackData->FilePathName); // "C:\root\folder"
-	lpSess->AppendPathBuff(ENTER_DIRECTORY_PATH); // "C:\root\folder\*"
+	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
+	swprintf_s(pathBuff, L"%ls%ls%ls", gSessStore.GetRoot(), callbackData->FilePathName, ENTER_DIRECTORY_PATH);
+	// "C:\root\" -> "C:\root\folder" ->"C:\root\folder\*"
 
 	HANDLE hFind = INVALID_HANDLE_VALUE;
 	WIN32_FIND_DATA ffd;
-	hFind = FindFirstFile(lpSess->GetPath(), &ffd);
+	hFind = FindFirstFile(pathBuff, &ffd);
 
 	if (INVALID_HANDLE_VALUE == hFind)
 	{
-		printf_s("[%s] Open hFile failed for %ls\n", __func__, lpSess->GetPath());
+		printf_s("[%s] Open hFile failed for %ls\n", __func__, pathBuff);
 		return ERROR_INVALID_HANDLE;
 	}
 
@@ -168,10 +163,6 @@ HRESULT MyGetEnumCallback(
 				goto l_getEnumComplete;
 			}
 		}
-		else
-		{
-			printf_s("[%s] No match found for %ls, %ls\n", __func__, lpSess->GetPath(), searchExpression);
-		}
 	} while (FindNextFile(hFind, &ffd) != 0);
 
 	dwError = GetLastError();
@@ -182,6 +173,8 @@ HRESULT MyGetEnumCallback(
 	}
 
 l_getEnumComplete:
+	// Search into a directory will come 2 requests, the first will be singleEntry with "*" as searchExp
+	// Avoid blocking the second call by testing isSingleEntry
 	if (!isSingleEntry)
 	{
 		lpSess->IsGetEnumComplete = true;
@@ -196,12 +189,8 @@ HRESULT MyGetPlaceholderCallback(
 {
 	printf_s("[%s] filePath %ls\n", __func__, callbackData->FilePathName);
 
-	LPCWSTR filePath = callbackData->FilePathName;
-	BOOL isFileFound = false;
-
 	// Build absolute path
-	LPWSTR pathBuff = new wchar_t[PATH_BUFF_LEN];
-	memset(pathBuff, 0, PATH_BUFF_LEN);
+	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
 	lstrcatW(pathBuff, gSessStore.GetRoot());
 	lstrcatW(pathBuff, DIRECTORY_SEP_PATH);
 	lstrcatW(pathBuff, callbackData->FilePathName);
@@ -210,6 +199,8 @@ HRESULT MyGetPlaceholderCallback(
 	if (INVALID_FILE_ATTRIBUTES == fileAttr)
 	{
 		printf_s("[%s] file not found for %ls\n", __func__, pathBuff);
+		// When renaming/moving, this cb will be called (not desired) unless
+		// PRJ_QUERY_FILE_NAME_CB is provided
 		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
 	}
 
@@ -233,8 +224,6 @@ HRESULT MyGetPlaceholderCallback(
 		CloseHandle(hFile);
 	}
 
-	delete[] pathBuff;
-
 	PRJ_FILE_BASIC_INFO fileBasicInfo = {};
 	fileBasicInfo.IsDirectory = (fileAttr & FILE_ATTRIBUTE_DIRECTORY) != 0;
 	fileBasicInfo.FileAttributes = fileAttr;
@@ -243,7 +232,7 @@ HRESULT MyGetPlaceholderCallback(
 	placeholderInfo.FileBasicInfo = fileBasicInfo;
 
 	PrjWritePlaceholderInfo(callbackData->NamespaceVirtualizationContext,
-		filePath,
+		callbackData->FilePathName,
 		&placeholderInfo,
 		sizeof(placeholderInfo));
 
@@ -270,8 +259,7 @@ HRESULT MyGetFileDataCallback(
 		return E_OUTOFMEMORY;
 	}
 
-	LPWSTR pathBuff = new wchar_t[PATH_BUFF_LEN];
-	memset(pathBuff, 0, PATH_BUFF_LEN);
+	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
 	lstrcatW(pathBuff, gSessStore.GetRoot());
 	lstrcatW(pathBuff, DIRECTORY_SEP_PATH);
 	lstrcatW(pathBuff, callbackData->FilePathName);
@@ -286,8 +274,6 @@ HRESULT MyGetFileDataCallback(
 		OPEN_EXISTING,         // existing file only
 		FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, // normal file
 		NULL);
-	
-	delete[] pathBuff;
 
 	if (hFile == INVALID_HANDLE_VALUE)
 	{
@@ -314,5 +300,59 @@ HRESULT MyGetFileDataCallback(
 	return hr;
 }
 
+HRESULT MyQueryFileNameCallback(
+	_In_ const PRJ_CALLBACK_DATA* callbackData
+)
+{
+	printf_s("[%s] %ls\n", __func__, callbackData->FilePathName);
+
+	// Build absolute path
+	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
+	lstrcatW(pathBuff, gSessStore.GetRoot());
+	lstrcatW(pathBuff, DIRECTORY_SEP_PATH);
+	lstrcatW(pathBuff, callbackData->FilePathName);
+
+	UINT32 fileAttr = GetFileAttributes(pathBuff);
+	if (INVALID_FILE_ATTRIBUTES == fileAttr)
+	{
+		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+	}
+	else
+	{
+		return S_OK;
+	}
+
+}
+
+HRESULT MyNotificationCallback(
+	_In_ const PRJ_CALLBACK_DATA* callbackData,
+	_In_ BOOLEAN isDirectory,
+	_In_ PRJ_NOTIFICATION notification,
+	_In_opt_ PCWSTR destinationFileName,
+	_Inout_ PRJ_NOTIFICATION_PARAMETERS* operationParameters
+)
+{
+	printf_s("[%s] dir%d notif %ld from %ls to %ls\n", __func__, isDirectory, notification, callbackData->FilePathName, destinationFileName);
+	if (notification == PRJ_NOTIFICATION_FILE_RENAMED)
+	{
+		if (wcslen(callbackData->FilePathName) == 0
+			|| nullptr == destinationFileName 
+			|| wcslen(destinationFileName) == 0
+		)
+		{
+			return ERROR_NOT_SUPPORTED;
+		}
+		// Add "/*" for directory to distinguish from files
+		
+		if (isDirectory)
+		{
+			wchar_t pathBuff1[PATH_BUFF_LEN] = { 0 };
+			swprintf_s(pathBuff1, L"%ls%ls", callbackData->FilePathName, ENTER_DIRECTORY_PATH);
+		}
+		
+		//gSessStore.AddRemap(callbackData->FilePathName, destinationFileName);
+	}
+	return S_OK;
+}
 
 
