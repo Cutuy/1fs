@@ -213,12 +213,32 @@ HRESULT MyGetPlaceholderCallback(
 		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
 	}
 
+	HANDLE hFile;
+	hFile = CreateFile(pathBuff,               // file to open
+		GENERIC_READ,          // open for reading
+		FILE_SHARE_READ,       // share for reading
+		NULL,                  // default security
+		OPEN_EXISTING,         // existing file only
+		FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, // normal file
+		NULL);
+	LARGE_INTEGER fileSize;
+	if (hFile == INVALID_HANDLE_VALUE || !GetFileSizeEx(hFile, &fileSize))
+	{
+		printf_s("[%s] file size failed to get\n", __func__);
+		fileSize.LowPart = 0;
+		fileSize.HighPart = 0;
+	}
+	if (hFile != INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(hFile);
+	}
+
 	delete[] pathBuff;
 
 	PRJ_FILE_BASIC_INFO fileBasicInfo = {};
 	fileBasicInfo.IsDirectory = (fileAttr & FILE_ATTRIBUTE_DIRECTORY) != 0;
 	fileBasicInfo.FileAttributes = fileAttr;
-	fileBasicInfo.FileSize = 1 << 20;
+	fileBasicInfo.FileSize = fileSize.QuadPart;
 	PRJ_PLACEHOLDER_INFO placeholderInfo = {};
 	placeholderInfo.FileBasicInfo = fileBasicInfo;
 
@@ -260,7 +280,7 @@ HRESULT MyGetFileDataCallback(
 	HANDLE hFile;
 
 	hFile = CreateFile(pathBuff,               // file to open
-		GENERIC_READ,          // open for reading
+		GENERIC_READ | GENERIC_WRITE,          // open for reading
 		FILE_SHARE_READ,       // share for reading
 		NULL,                  // default security
 		OPEN_EXISTING,         // existing file only
