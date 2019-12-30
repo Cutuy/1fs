@@ -1,12 +1,16 @@
 Effective knowledge finding > Personal organization vs public view of directory
 
 ## Objective
-[vview-o1 ✔] Provide a different view for an existing directory at another place
+[vview-o1 ✔] Provide the same view for an existing directory at another place
+[vview-o2 🟢] Provide a different view for the projected directory
 
 ## Key Results
 [vview-o1-kr1 ✔] Project a hierarchical directory with arbitrary in-mem data that supports placeholder enumeration
 [vview-o1-kr2 ✔] An exisiting directory is "captured" by 1fs and then projected
 [vview-o1-kr3 ✔] The file data, upon requested, is "projected" from its original location
+[vview-o2-kr1] Track moves of each individual file
+[vview-o2-kr2] The tracking info is persisted then restored (disk<->mem)
+[vview-o2-kr3] Restore the modified projection upon a new projection for all files previously projected
 
 ## Next (12/28)
 Refactor required to correctly address diff between "file path" from projfs and win32
