@@ -51,7 +51,9 @@ public:
 
 typedef PrjFsSessionRuntime* LPPrjFsSessionRuntime;
 
-typedef std::set<PrjFsMap, PrjFsMapComparator> Remap;
+// TODO make sure the stored/accessed order follows FIFO of add time!
+//typedef std::set<PrjFsMap, PrjFsMapComparator> Remap;
+typedef std::vector<PrjFsMap> Remap;
 
 // Expects singleton
 class PrjFsSessionStore
@@ -59,7 +61,7 @@ class PrjFsSessionStore
 private:
 	LPCWSTR srcName;
 	std::vector<PrjFsSessionRuntime*> sessions;
-	Remap remaps;
+	Remap remaps; // user ops as well as backtracks
 public:
 	PrjFsSessionStore() = delete;
 	PrjFsSessionStore(LPCWSTR root);
@@ -68,4 +70,9 @@ public:
 	void FreeSession(LPCGUID lpcGuid);
 	int AddRemap(PCWSTR from, PCWSTR to);
 	//int FilterRemaps(__in PCWSTR directory, __inout Remap* remaps);
+	void ReplayProjections(
+		__in PCWSTR dir,
+		__out std::vector<LPCWSTR> *inclusions,
+		__out std::vector<LPCWSTR> *exclusions
+	);
 };

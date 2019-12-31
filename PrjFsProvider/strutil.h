@@ -6,6 +6,8 @@
 
 BOOL EndsWith(LPCWSTR str, LPCWSTR suffix);
 
+void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last);
+
 /*
 	Compare the path depth difference
 	return false if paths not comparable (partial order cannot established)

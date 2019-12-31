@@ -11,6 +11,23 @@ BOOL EndsWith(LPCWSTR str, LPCWSTR suffix)
 	return nStr >= nSuffix && 0 == lstrcmpW(str + nStr - nSuffix, suffix);
 }
 
+void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last)
+{
+	std::wstring str(path);
+	int i = (int)str.rfind('\\');
+	if (i < 0)
+	{
+		lstrcpyW(last, str.substr(0).c_str());
+	}
+	else
+	{
+		// skipping the backslash
+		lstrcpyW(last, str.substr(i + 1).c_str());
+	}
+	
+	return;
+}
+
 BOOL lpathcmpW(__in LPCWSTR lpcSub, __in LPCWSTR lpcObj, __out INT* pLess)
 {
 	// No path shall contain "/*" or ends with "/"

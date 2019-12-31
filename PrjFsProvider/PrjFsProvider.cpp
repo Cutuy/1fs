@@ -67,13 +67,54 @@ int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 	lstrcpyW(map.FromPath, from);
 	lstrcpyW(map.ToPath, to);
 
-	auto ptr = this->remaps.insert(map);
-	if (!ptr.second)
-	{
-		printf_s("[%s] key %ls already exists\n", __func__, from);
-	}
+	this->remaps.push_back(map);
+	// TODO check dup
+	// printf_s("[%s] key %ls already exists\n", __func__, from);
 
 	return 0;
+}
+
+void PrjFsSessionStore::ReplayProjections(
+	__in PCWSTR dir, 
+	__out std::vector<LPCWSTR> *inclusions,
+	__out std::vector<LPCWSTR> *exclusions
+)
+{
+	for (auto it = this->remaps.begin(); it != this->remaps.end(); ++it)
+	{
+		PrjFsMap proj = *it;
+		BOOL hr;
+		
+		int less;
+
+		if (hr = lpathcmpW(proj.ToPath, dir, &less))
+		{
+			if (less <= 0)
+			{
+				// add to repath dict 
+			}
+			else if (1 == less)
+			{
+				wchar_t pathBuff[PATH_BUFF_LEN];
+				GetPathLastComponent(proj.ToPath, pathBuff);
+				inclusions->push_back(pathBuff);
+				// add to repath dict 
+			}
+		}
+		// no else!
+		if (hr = lpathcmpW(proj.FromPath, dir, &less))
+		{
+			if (1 == less)
+			{
+				wchar_t pathBuff[PATH_BUFF_LEN];
+				GetPathLastComponent(proj.FromPath, pathBuff);
+				exclusions->push_back(pathBuff);
+				// add to repath dict
+			}
+		}
+	}
+	// add to repath dict is implicitly done by reversing each kvp of remap
+	// return
 }
 
 /*
@@ -214,7 +255,7 @@ HRESULT MyGetEnumCallback(
 				&& 0 != lstrcmpW(ffd.cFileName, L".") 
 				&& 0 != lstrcmpW(ffd.cFileName, L".."))
 			{
-				memset(pathBuff, 0, PATH_BUFF_LEN);
+				wmemset(pathBuff, 0, PATH_BUFF_LEN);
 				swprintf_s(pathBuff, L"%ls%ls", ffd.cFileName, SHADOW_FILE_SUFFIX);
 				fileBasicInfo.IsDirectory = false;
 				fileBasicInfo.FileSize = 0;

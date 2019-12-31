@@ -69,14 +69,52 @@ void testStringUtils()
     assert(lpathcmpW(str10, str10, &less));
     assert(0 == less);
     assert(!lpathcmpW(str8, str11, &less));
+
+    printf_s("%ls\n", L"GetPathLastComponent");
+    wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
+    GetPathLastComponent(str10, pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"()"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+    GetPathLastComponent(str9, pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(aaa)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+    GetPathLastComponent(str7, pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(d)"));
     while (1);
+}
+
+void testProjectionReplays()
+{
+    gSessStore.AddRemap(LR"(a\g\h)", LR"(a\j)");
+    gSessStore.AddRemap(LR"(a\f)", LR"(a\j\p)");
+    std::vector<LPCWSTR> inclusions;
+    std::vector<LPCWSTR> exclusions;
+    // view at a
+    gSessStore.ReplayProjections(LR"(a)", &inclusions, &exclusions);
+    assert(0 == lstrcmpW(inclusions.at(0), LR"(j)"));
+    assert(0 == lstrcmpW(exclusions.at(0), LR"(f)"));
+    inclusions.clear();
+    exclusions.clear();
+    // view at j
+    gSessStore.ReplayProjections(LR"(a\j)", &inclusions, &exclusions);
+    assert(0 == lstrcmpW(inclusions.at(0), LR"(p)"));
+    assert(exclusions.size() == 0);
+    inclusions.clear();
+    exclusions.clear();
+    // view at p
+    gSessStore.ReplayProjections(LR"(a\j\p)", &inclusions, &exclusions);
+    assert(inclusions.size() == 0);
+    assert(exclusions.size() == 0);
+    inclusions.clear();
+    exclusions.clear();
 }
 
 int main()
 {
     std::cout << "Hello World!\n";
 
-    testStringUtils();
+    //testStringUtils();
+    testProjectionReplays();
 
     // Mark as placeholder, or the root would not be a reparse point
     HRESULT hr;
