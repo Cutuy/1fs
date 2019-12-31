@@ -4,6 +4,9 @@
 #include <iostream>
 #include <windows.h>
 #include <projectedfslib.h>
+#include <assert.h>
+
+#include "strutil.h"
 #include "PrjFsProvider.h"
 
 #pragma comment(lib, "ProjectedFSLib.lib")
@@ -11,7 +14,8 @@
 #define SrcName LR"(B:\content\)"
 #define DstName LR"(A:\root\)"
 
-const GUID instanceId = { 0xA2299C9C, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
+const GUID instanceId = { 0xA2299CAC, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
+//const GUID instanceId = { 0xA2299C9C, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
 //const GUID instanceId = { 0xA2299C8C, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
 
 PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT instanceHandle;
@@ -27,9 +31,52 @@ PRJ_CALLBACKS callbackTable2 = {
 };
 extern PrjFsSessionStore gSessStore = PrjFsSessionStore(SrcName);
 
+void testStringUtils()
+{
+    LPCWSTR str1 = LR"(aaa\bbbb\c\d)";
+    LPCWSTR str2 = LR"(aaa\b)";
+    LPCWSTR str3 = LR"(b\c\d)";
+    LPCWSTR str4 = LR"(aaa\bbbb\c\d)";
+    LPCWSTR str5 = LR"(aaa\bbbb\c\)";
+    LPCWSTR str6 = LR"(aaa\bbbb\c)";
+    LPCWSTR str7 = LR"(aaa\bbbb\d)";
+    LPCWSTR str8 = LR"(a)";
+    LPCWSTR str9 = LR"(aaa)";
+    LPCWSTR str10 = LR"()";
+    LPCWSTR str11 = LR"(b)";
+
+
+    printf_s("%ls\n", L"EndsWith");
+    assert(EndsWith(str1, str3));
+    assert(!EndsWith(str1, str2));
+    assert(EndsWith(str1, str4));
+    assert(EndsWith(str4, str3));
+
+    printf_s("%ls\n", L"lpathcmpW");
+    int less;
+    
+    assert(lpathcmpW(str1, str1, &less));
+    assert(0 == less);
+    assert(!lpathcmpW(str1, str5, &less));
+    assert(lpathcmpW(str1, str6, &less));
+    assert(1 == less);
+    assert(!lpathcmpW(str1, str8, &less));
+    assert(!lpathcmpW(str8, str1, &less));
+    assert(lpathcmpW(str1, str10, &less));
+    assert(4 == less);
+    assert(lpathcmpW(str10, str1, &less));
+    assert(-4 == less);
+    assert(lpathcmpW(str10, str10, &less));
+    assert(0 == less);
+    assert(!lpathcmpW(str8, str11, &less));
+    while (1);
+}
+
 int main()
 {
     std::cout << "Hello World!\n";
+
+    testStringUtils();
 
     // Mark as placeholder, or the root would not be a reparse point
     HRESULT hr;
@@ -57,9 +104,22 @@ int main()
 
     // TODO Entering "tracking" mode, where any file moves within src
     // will be tracked and persisted for future virtualizations.
+    
+    /*
+    Sleep(2000);
+    wchar_t src[PATH_BUFF_LEN] = LR"(A:\root\f1-visa-renewal\test)";
+    wchar_t dst[PATH_BUFF_LEN] = LR"(A:\root\test)";
+
+    if (!MoveFileEx(src, dst, MOVEFILE_WRITE_THROUGH))
+    {
+        printf("MoveFileEx failed with error %d\n", GetLastError());
+    }
+    */
 
     while (1);
 }
+
+
 
 // Run program: Ctrl + F5 or Debug > Start Without Debugging menu
 // Debug program: F5 or Debug > Start Debugging menu

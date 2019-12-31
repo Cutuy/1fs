@@ -18,4 +18,5 @@ Code quality update
 (later) Encapsulate in a class/lib that runs as a console app
 
 ## Notes (12/30)
-- It seems ProjFS does not support rename/move of a directory. This, however, is crtical to our feature...
+It seems ProjFS does not support rename/move of a directory. This, however, is crtical to our feature...
+- Workaround: create a shadow file for each directory, with which the user can move around

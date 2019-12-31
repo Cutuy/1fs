@@ -8,9 +8,20 @@
 #include <strsafe.h>
 #include <assert.h>
 
+#include "strutil.h"
 #include "PrjFsProvider.h"
 
 extern PrjFsSessionStore gSessStore;
+
+
+
+#ifdef __DIRECTORY_WORKAROUND__
+inline BOOL IsShadowFile(LPCWSTR fileName)
+{
+	return EndsWith(fileName, SHADOW_FILE_SUFFIX);
+}
+#endif
+
 
 PrjFsSessionStore::PrjFsSessionStore(LPCWSTR root): srcName(root)
 {
@@ -59,11 +70,49 @@ int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 	auto ptr = this->remaps.insert(map);
 	if (!ptr.second)
 	{
-		printf_s("[%s] key %ls already exists", __func__, from);
+		printf_s("[%s] key %ls already exists\n", __func__, from);
 	}
 
 	return 0;
 }
+
+/*
+	Search for includes and excludes for directory at depth 1 of directory
+
+int PrjFsSessionStore::FilterRemaps(__in PCWSTR directory, __out std::vector<PCWSTR>* pIncludePaths, __out std::vector<PCWSTR>* pExcludePaths)
+{
+	auto pIncludePaths = new std::vector<PCWSTR>();
+	auto pExcludePaths = new std::vector<PCWSTR>();
+
+	// Requires directory to contain "/*"
+	PCWCHAR pch = wcsstr(directory, ENTER_DIRECTORY_PATH);
+	BOOL isDirectoryEntered = (nullptr != pch);
+	if (!isDirectoryEntered)
+	{
+
+	}
+	else
+	{
+		for (auto it = this->remaps.begin(); it != this->remaps.end(); ++it)
+		{
+			PrjFsMap map = *it;
+			// when "root/b/*" is accessed...
+			// Include when dir itself is projected from elsewhere
+			if (lstrcmpW(directory, map.ToPath))
+			{
+				pIncludePaths->push_back(map.FromPath);
+			}
+			// Exclude (root/b/a/* or root/b/c) from directory
+			if (PrjFileNameMatch(directory, map.FromPath)
+				&& IsAtRootDirectory(directory, map.FromPath))// TODO remap can be "copy" or "cut"
+			{
+				pExcludePaths->push_back(map.FromPath);
+			}
+		}
+	}
+
+}
+*/
 
 LPCWSTR PrjFsSessionStore::GetRoot()
 {
@@ -127,10 +176,13 @@ HRESULT MyGetEnumCallback(
 	}
 	*/
 
+	// Apply remaps
+
+
 	// Build absolute path
 	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
 	swprintf_s(pathBuff, L"%ls%ls%ls", gSessStore.GetRoot(), callbackData->FilePathName, ENTER_DIRECTORY_PATH);
-	// "C:\root\" -> "C:\root\folder" ->"C:\root\folder\*"
+	// "C:\root\" -> "C:\root\folder" -> "C:\root\folder\*"
 
 	HANDLE hFind = INVALID_HANDLE_VALUE;
 	WIN32_FIND_DATA ffd;
@@ -154,7 +206,26 @@ HRESULT MyGetEnumCallback(
 			fileBasicInfo.FileSize = (((INT64)ffd.nFileSizeHigh) << 32) | ffd.nFileSizeLow;
 			fileBasicInfo.FileAttributes = ffd.dwFileAttributes;
 
-			if (S_OK != (hr = PrjFillDirEntryBuffer(ffd.cFileName, &fileBasicInfo, dirEntryBufferHandle))) {
+			hr = PrjFillDirEntryBuffer(ffd.cFileName, &fileBasicInfo, dirEntryBufferHandle);
+
+#ifdef __DIRECTORY_WORKAROUND__
+			// Create shadow file for directory
+			if (fileBasicInfo.IsDirectory 
+				&& 0 != lstrcmpW(ffd.cFileName, L".") 
+				&& 0 != lstrcmpW(ffd.cFileName, L".."))
+			{
+				memset(pathBuff, 0, PATH_BUFF_LEN);
+				swprintf_s(pathBuff, L"%ls%ls", ffd.cFileName, SHADOW_FILE_SUFFIX);
+				fileBasicInfo.IsDirectory = false;
+				fileBasicInfo.FileSize = 0;
+				fileBasicInfo.FileAttributes = FILE_ATTRIBUTE_NORMAL;
+				hr = PrjFillDirEntryBuffer(pathBuff, &fileBasicInfo, dirEntryBufferHandle);
+
+				printf_s("[%s] Shadow file created for %ls\n", __func__, pathBuff);
+			}
+#endif
+			
+			if (FAILED(hr)) {
 				printf_s("[%s] PrjFillDirEntryBuffer failed %ld\n", __func__, hr);
 				return hr;
 			}
@@ -194,8 +265,17 @@ HRESULT MyGetPlaceholderCallback(
 	lstrcatW(pathBuff, gSessStore.GetRoot());
 	lstrcatW(pathBuff, DIRECTORY_SEP_PATH);
 	lstrcatW(pathBuff, callbackData->FilePathName);
-	
+
 	UINT32 fileAttr = GetFileAttributes(pathBuff);
+
+#ifdef __DIRECTORY_WORKAROUND__
+	if (IsShadowFile(pathBuff))
+	{
+		printf_s("[%s] found shadow file %ls\n", __func__, pathBuff);
+		fileAttr = FILE_ATTRIBUTE_NORMAL;
+	}
+#endif
+	
 	if (INVALID_FILE_ATTRIBUTES == fileAttr)
 	{
 		printf_s("[%s] file not found for %ls\n", __func__, pathBuff);
@@ -332,7 +412,7 @@ HRESULT MyNotificationCallback(
 	_Inout_ PRJ_NOTIFICATION_PARAMETERS* operationParameters
 )
 {
-	printf_s("[%s] dir%d notif %ld from %ls to %ls\n", __func__, isDirectory, notification, callbackData->FilePathName, destinationFileName);
+	printf_s("[%s] dir %d notif %ld from %ls to %ls\n", __func__, isDirectory, notification, callbackData->FilePathName, destinationFileName);
 	if (notification == PRJ_NOTIFICATION_FILE_RENAMED)
 	{
 		if (wcslen(callbackData->FilePathName) == 0
@@ -342,15 +422,31 @@ HRESULT MyNotificationCallback(
 		{
 			return ERROR_NOT_SUPPORTED;
 		}
-		// Add "/*" for directory to distinguish from files
-		
-		if (isDirectory)
+
+#ifdef __DIRECTORY_WORKAROUND__
+		if (!isDirectory && IsShadowFile(callbackData->FilePathName))
 		{
-			wchar_t pathBuff1[PATH_BUFF_LEN] = { 0 };
-			swprintf_s(pathBuff1, L"%ls%ls", callbackData->FilePathName, ENTER_DIRECTORY_PATH);
+			// Convert "/someDir_MOVE" to "/someDir/*"
+			// The special workingaround on acting on the remap should not be done here
+			wchar_t srcBuff[PATH_BUFF_LEN] = { 0 };
+			wmemcpy(srcBuff, callbackData->FilePathName, lstrlenW(callbackData->FilePathName) - lstrlenW(SHADOW_FILE_SUFFIX));
+			lstrcatW(srcBuff, ENTER_DIRECTORY_PATH);
+			
+			wchar_t dstBuff[PATH_BUFF_LEN] = { 0 };
+			wmemcpy(dstBuff, destinationFileName, lstrlenW(destinationFileName) - lstrlenW(SHADOW_FILE_SUFFIX));
+			lstrcatW(dstBuff, ENTER_DIRECTORY_PATH);
+			
+			gSessStore.AddRemap(srcBuff, dstBuff);
+			printf_s("[%s] Added remap %ls %ls\n", __func__, srcBuff, dstBuff);
 		}
-		
-		//gSessStore.AddRemap(callbackData->FilePathName, destinationFileName);
+		else
+		{
+			gSessStore.AddRemap(callbackData->FilePathName, destinationFileName);
+			printf_s("[%s] Added remap %ls %ls\n", __func__, callbackData->FilePathName, destinationFileName);
+		}
+#else
+		throw ERROR_NOT_SUPPORTED;
+#endif
 	}
 	return S_OK;
 }

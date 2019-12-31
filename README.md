@@ -5,21 +5,22 @@ A file system projection provider
 File clutters & heterogeneous files created in collaborative work result in inefficient knowledge finding and obscures knowledge creation
 
 ## Design Principles
-  - Minimalism in up-front cost and "runtime" overhead ("before you create xxx, you must")
-  - Freedom of knowledge organization, use of cloud drives, 
+  - Minimized up-front cost and "runtime" overhead for the user
+  - Maximized freedom of choice in terms of of cloud drives, directory explorer, note-taking software, etc.
 
 ## Objectives
 * Decluttered record keeping
-  - Versioning, Editable (DOCX) vs exported (PDF) (completeness)
-  - File as unit of knowledge, allowing virtual files projected from applications
-  - Allow files from multi source (local fs, cloud, web url)
+  - File and directory as unit of knowledge
+  - Basic versioning, plus support for editable (DOCX) vs exported (PDF) versions
+  - Allow virtual files projected from applications
+  - Allow files projected from multiple sources (local fs, cloud, web url)
 * Effective knowledge finding
-  - Personal organization vs public view of directory [*]
-  - Gather files by topic, file stack, editable/exported type
-  - Browse by hierachy as if browsing a normal directory
-* Unlimited knowledge creation
-  - Integration with RCS for submodules
-  - Backward propagation (personal -> public)
+  - Allow personal organization of knowledge in addition to the public view
+  - Enable "structured" file search (rather than keyword), that is search by path, by version, and by editable/exported type
+  - Allow directory browsing by dir, ls, File Explorer, etc.
+* Unlimited knowledge creation (Future)
+  - Integration with RCS (git)
+  - Sync back changed from personal view to public view
   
 ## Technical ideas
 - stack of files (group of files from all formats/versions)

@@ -3,9 +3,8 @@
 #include <vector>
 #include <set>
 
-#define PATH_BUFF_LEN (256)
-#define DIRECTORY_SEP_PATH L"\\"
-#define ENTER_DIRECTORY_PATH L"\\*"
+#include "const.h"
+
 
 PRJ_START_DIRECTORY_ENUMERATION_CB MyStartEnumCallback;
 PRJ_END_DIRECTORY_ENUMERATION_CB MyEndEnumCallback;
@@ -25,8 +24,19 @@ struct PrjFsMapComparator
 {
 	bool operator() (const PrjFsMap& lhs, const PrjFsMap& rhs) const
 	{
-		return 0 == lstrcmpW(lhs.FromPath, rhs.FromPath) \
-			&& 0 == lstrcmpW(lhs.ToPath, rhs.ToPath);
+		int isFromPathLessThan = lstrcmpW(lhs.FromPath, rhs.FromPath);
+		if (isFromPathLessThan < 0)
+		{
+			return true;
+		}
+		else if (isFromPathLessThan == 0)
+		{
+			return lstrcmpW(lhs.ToPath, rhs.ToPath) < 0;
+		}
+		else
+		{
+			return false;
+		}
 	}
 };
 
@@ -41,13 +51,15 @@ public:
 
 typedef PrjFsSessionRuntime* LPPrjFsSessionRuntime;
 
+typedef std::set<PrjFsMap, PrjFsMapComparator> Remap;
+
 // Expects singleton
 class PrjFsSessionStore
 {
 private:
 	LPCWSTR srcName;
 	std::vector<PrjFsSessionRuntime*> sessions;
-	std::set<PrjFsMap, PrjFsMapComparator> remaps;
+	Remap remaps;
 public:
 	PrjFsSessionStore() = delete;
 	PrjFsSessionStore(LPCWSTR root);
@@ -55,4 +67,5 @@ public:
 	LPPrjFsSessionRuntime GetSession(LPCGUID lpcGuid);
 	void FreeSession(LPCGUID lpcGuid);
 	int AddRemap(PCWSTR from, PCWSTR to);
+	//int FilterRemaps(__in PCWSTR directory, __inout Remap* remaps);
 };
