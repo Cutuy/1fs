@@ -17,12 +17,12 @@ void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last)
 	int i = (int)str.rfind('\\');
 	if (i < 0)
 	{
-		lstrcpyW(last, str.substr(0).c_str());
+		lstrcpyW(last, str.substr(0).data());
 	}
 	else
 	{
 		// skipping the backslash
-		lstrcpyW(last, str.substr(i + 1).c_str());
+		lstrcpyW(last, str.substr(i + 1).data());
 	}
 	
 	return;

@@ -63,9 +63,7 @@ void PrjFsSessionStore::FreeSession(LPCGUID lpcGuid)
 int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 {
 	// Let's forget the loops & priorities for remaps now; assuming they do not have conflict of scopes at all
-	PrjFsMap map;
-	lstrcpyW(map.FromPath, from);
-	lstrcpyW(map.ToPath, to);
+	PrjFsMap map(from, to);
 
 	this->remaps.push_back(map);
 	// TODO check dup
@@ -92,6 +90,8 @@ void PrjFsSessionStore::ReplayProjections(
 			if (less <= 0)
 			{
 				// add to repath dict 
+				this->AddRepath(proj.ToPath, proj.FromPath);
+				
 			}
 			else if (1 == less)
 			{
@@ -99,6 +99,7 @@ void PrjFsSessionStore::ReplayProjections(
 				GetPathLastComponent(proj.ToPath, pathBuff);
 				inclusions->push_back(pathBuff);
 				// add to repath dict 
+				this->AddRepath(proj.ToPath, proj.FromPath);
 			}
 		}
 		// no else!
@@ -109,12 +110,58 @@ void PrjFsSessionStore::ReplayProjections(
 				wchar_t pathBuff[PATH_BUFF_LEN];
 				GetPathLastComponent(proj.FromPath, pathBuff);
 				exclusions->push_back(pathBuff);
-				// add to repath dict
+				// ignore (since the repath will be added by rule #1 or #2 at some dir)
 			}
 		}
 	}
-	// add to repath dict is implicitly done by reversing each kvp of remap
-	// return
+	return;
+}
+
+void PrjFsSessionStore::AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath)
+{
+	// This function ensures any repath, at time of insertion, is "fully expanded"
+	// to its oldest path possible; and updates if an old virtPath already exists.
+	// This results in values of repaths are always physical paths
+
+	if (nullptr == virtPath || 0 == lstrlenW(virtPath))
+	{
+		printf_s("[%s] virtPath cannot be empty\n", __func__);
+		return;
+	}
+	
+	INT less;
+	PrjFsMap map(virtPath, possiblePhysPath); // force mem alloc
+
+	// Check dup
+	if (this->repaths.count(std::wstring(map.FromPath)))
+	{
+		printf_s("[%s] Key %ls will be replaced\n", __func__, map.FromPath);
+	}
+
+	// Expand (theoretically a new repath should expand at most once)
+	for (auto it = this->repaths.begin(); it != this->repaths.end(); ++it)
+	{
+		std::pair<std::wstring, std::wstring> pair = *it;
+		// If the newer toPath is deeper or equal to the older virtPath
+		if (lpathcmpW(map.ToPath, pair.first.data(), &less))
+		{
+			if (less < 0)
+			{
+				printf_s("[%s] Possible illegal repath insertion due to collision of\n \
+				(new) %ls -> %ls\n \
+				(old) %ls -> %ls\n",
+				__func__, map.FromPath, map.ToPath, pair.first, pair.second);
+				return;
+			}
+			else
+			{
+				swprintf_s(map.ToPath, L"%ls%ls", pair.first, map.ToPath + lstrlenW(pair.first.data()));
+			}
+		}
+	}
+
+	// Insert, may overwrite existing key
+	this->repaths[std::wstring(map.FromPath)] = std::wstring(map.ToPath);
 }
 
 /*

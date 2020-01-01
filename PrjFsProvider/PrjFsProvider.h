@@ -1,7 +1,8 @@
 #pragma once
 #include <projectedfslib.h>
 #include <vector>
-#include <set>
+#include <map>
+#include <string>
 
 #include "const.h"
 
@@ -18,6 +19,17 @@ struct PrjFsMap
 {
 	wchar_t FromPath[PATH_BUFF_LEN];
 	wchar_t ToPath[PATH_BUFF_LEN];
+	PrjFsMap(PCWSTR lpcFromPath, PCWSTR lpcToPath)
+	{
+		if (lpcFromPath)
+		{
+			lstrcpyW(FromPath, lpcFromPath);
+		}
+		if (lpcToPath)
+		{
+			lstrcpyW(ToPath, lpcToPath);
+		}
+	}
 };
 
 struct PrjFsMapComparator
@@ -40,6 +52,13 @@ struct PrjFsMapComparator
 	}
 };
 
+struct RepathComparator
+{
+	bool operator() (const std::wstring& lhs, const std::wstring& rhs) const {
+		return -1 == lstrcmpW(lhs.data(), rhs.data());
+	}
+};
+
 class PrjFsSessionRuntime
 {
 private:
@@ -51,9 +70,6 @@ public:
 
 typedef PrjFsSessionRuntime* LPPrjFsSessionRuntime;
 
-// TODO make sure the stored/accessed order follows FIFO of add time!
-//typedef std::set<PrjFsMap, PrjFsMapComparator> Remap;
-typedef std::vector<PrjFsMap> Remap;
 
 // Expects singleton
 class PrjFsSessionStore
@@ -61,7 +77,11 @@ class PrjFsSessionStore
 private:
 	LPCWSTR srcName;
 	std::vector<PrjFsSessionRuntime*> sessions;
-	Remap remaps; // user ops as well as backtracks
+	
+	std::map<std::wstring, std::wstring, RepathComparator> repaths;
+	
+	// Make sure the stored / accessed order follows FIFO of add time!
+	std::vector<PrjFsMap> remaps; // user ops as well as backtracks
 public:
 	PrjFsSessionStore() = delete;
 	PrjFsSessionStore(LPCWSTR root);
@@ -69,10 +89,12 @@ public:
 	LPPrjFsSessionRuntime GetSession(LPCGUID lpcGuid);
 	void FreeSession(LPCGUID lpcGuid);
 	int AddRemap(PCWSTR from, PCWSTR to);
-	//int FilterRemaps(__in PCWSTR directory, __inout Remap* remaps);
 	void ReplayProjections(
 		__in PCWSTR dir,
 		__out std::vector<LPCWSTR> *inclusions,
 		__out std::vector<LPCWSTR> *exclusions
 	);
+	void AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath);
+	void TEST_ClearProjections();
+	void TEST_GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath);
 };

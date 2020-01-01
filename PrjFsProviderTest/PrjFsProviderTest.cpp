@@ -31,6 +31,24 @@ PRJ_CALLBACKS callbackTable2 = {
 };
 extern PrjFsSessionStore gSessStore = PrjFsSessionStore(SrcName);
 
+void PrjFsSessionStore::TEST_ClearProjections() {
+    this->repaths.clear();
+    this->remaps.clear();
+}
+
+void PrjFsSessionStore::TEST_GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath)
+{
+    if (this->repaths.count(virtPath))
+    {
+        lstrcpyW(physPath, this->repaths[std::wstring(virtPath)].data());
+    }
+    else
+    {
+        lstrcpyW(physPath, virtPath);
+    }
+    return;
+}
+
 void testStringUtils()
 {
     LPCWSTR str1 = LR"(aaa\bbbb\c\d)";
@@ -107,6 +125,13 @@ void testProjectionReplays()
     assert(exclusions.size() == 0);
     inclusions.clear();
     exclusions.clear();
+
+    gSessStore.TEST_ClearProjections();
+}
+
+void testRepathExpansions()
+{
+
 }
 
 int main()
