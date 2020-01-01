@@ -68,7 +68,7 @@ int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 	this->remaps.push_back(map);
 	// TODO check dup
 	// printf_s("[%s] key %ls already exists\n", __func__, from);
-
+	this->AddRepath(to, from);
 	return 0;
 }
 
@@ -90,7 +90,7 @@ void PrjFsSessionStore::ReplayProjections(
 			if (less <= 0)
 			{
 				// add to repath dict 
-				this->AddRepath(proj.ToPath, proj.FromPath);
+				//this->AddRepath(proj.ToPath, proj.FromPath);
 				
 			}
 			else if (1 == less)
@@ -99,7 +99,7 @@ void PrjFsSessionStore::ReplayProjections(
 				GetPathLastComponent(proj.ToPath, pathBuff);
 				inclusions->push_back(pathBuff);
 				// add to repath dict 
-				this->AddRepath(proj.ToPath, proj.FromPath);
+				//this->AddRepath(proj.ToPath, proj.FromPath);
 			}
 		}
 		// no else!
@@ -155,13 +155,27 @@ void PrjFsSessionStore::AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath)
 			}
 			else
 			{
-				swprintf_s(map.ToPath, L"%ls%ls", pair.first, map.ToPath + lstrlenW(pair.first.data()));
+				// Replace the prefix (pair.first) part of map.ToPath to pair.second
+				// Then set it to map.ToPath
+				
+				wchar_t pathBuff[PATH_BUFF_LEN];
+				swprintf_s(pathBuff, L"%ls%ls",
+					pair.second.data(), 
+					map.ToPath + lstrlenW(pair.first.data())
+				);
+				wmemset(map.ToPath, 0, PATH_BUFF_LEN);
+				lstrcpyW(map.ToPath, pathBuff);
+
+				goto insert_one;
+				// Just to make sure...
+				break;
 			}
 		}
 	}
-
+insert_one:
 	// Insert, may overwrite existing key
 	this->repaths[std::wstring(map.FromPath)] = std::wstring(map.ToPath);
+	return;
 }
 
 /*

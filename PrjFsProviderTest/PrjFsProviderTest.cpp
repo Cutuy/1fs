@@ -131,7 +131,15 @@ void testProjectionReplays()
 
 void testRepathExpansions()
 {
-
+    // AddRemap(oldAddress, newAddress)
+    // repath: given newAddress, get oldAddress
+    printf_s("[%s] Please CHECK RESULTS MANUALLY\n", __func__);
+    gSessStore.AddRemap(LR"(a\g\h)", LR"(a\j)");
+    gSessStore.AddRemap(LR"(a\f)", LR"(a\j\p)");
+    gSessStore.AddRemap(LR"(a\j)", LR"(a\k)");
+    gSessStore.AddRemap(LR"(a\j\c)", LR"(a\g\c)");
+    while (1);
+    gSessStore.TEST_ClearProjections();
 }
 
 int main()
@@ -139,7 +147,8 @@ int main()
     std::cout << "Hello World!\n";
 
     //testStringUtils();
-    testProjectionReplays();
+    //testProjectionReplays();
+    testRepathExpansions();
 
     // Mark as placeholder, or the root would not be a reparse point
     HRESULT hr;
