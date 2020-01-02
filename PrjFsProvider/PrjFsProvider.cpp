@@ -69,12 +69,35 @@ void PrjFsSessionStore::FreeSession(LPCGUID lpcGuid)
 int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 {
 	// Let's forget the loops & priorities for remaps now; assuming they do not have conflict of scopes at all
-	PrjFsMap map(from, to);
+	wchar_t physFrom[PATH_BUFF_LEN] = { 0 };
+	this->GetRepath(from, physFrom);
+	wchar_t physTo[PATH_BUFF_LEN] = { 0 };
+	this->GetRepath(to, physTo);
+	
+	// Get the physical path of remap before adding it
+	// Any duplications or single-from_multi-to will be handled by GetRepath
+	PrjFsMap map(physFrom, physTo);
 
-	this->remaps.push_back(map);
-	// TODO check dup
-	// printf_s("[%s] key %ls already exists\n", __func__, from);
-	this->AddRepath(to, from);
+	this->remaps.erase(
+		std::remove_if(
+			this->remaps.begin(),
+			this->remaps.end(),
+			[map](PrjFsMap const& rm) {
+				return 0 == lstrcmpW(rm.FromPath, map.FromPath);
+			}
+		),
+		this->remaps.end()
+	);
+	// Filter identity projection (though it doesn't hurt)
+	if (0 != lstrcmpW(map.FromPath, map.ToPath))
+	{
+		this->remaps.push_back(map);
+	}
+
+	// Take effect of the new repath only after the remap has been added
+	// otherwise the current remap cannot use repath translation (from always equals to to)
+	this->AddRepath(to, from); // TODO: or to -> physFrom?
+	
 	return 0;
 }
 
@@ -84,6 +107,10 @@ void PrjFsSessionStore::ReplayProjections(
 	__out std::vector<std::wstring> *virtExclusions
 )
 {
+	wchar_t physDir[PATH_BUFF_LEN] = { 0 };
+	gSessStore.GetRepath(virtDir, physDir);
+
+	// File moves are evaluated always against physical path
 	for (auto it = this->remaps.begin(); it != this->remaps.end(); ++it)
 	{
 		PrjFsMap proj = *it;
@@ -91,7 +118,7 @@ void PrjFsSessionStore::ReplayProjections(
 		
 		int less;
 
-		if (hr = lpathcmpW(proj.ToPath, virtDir, &less))
+		if (hr = lpathcmpW(proj.ToPath, physDir, &less))
 		{
 			if (less <= 0)
 			{
@@ -111,7 +138,7 @@ void PrjFsSessionStore::ReplayProjections(
 			}
 		}
 		// no else!
-		if (hr = lpathcmpW(proj.FromPath, virtDir, &less))
+		if (hr = lpathcmpW(proj.FromPath, physDir, &less))
 		{
 			if (1 == less)
 			{
@@ -184,7 +211,7 @@ insert_one:
 	return;
 }
 
-void PrjFsSessionStore::GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath)
+void PrjFsSessionStore::GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath) const
 {
 	INT most = MININT;
 	lstrcpyW(physPath, virtPath);
@@ -192,7 +219,9 @@ void PrjFsSessionStore::GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath)
 	// Find and replace by the repath of the closest parent (or self)
 	// Do not change physPath while in loop, otherwise it may affect later iterations
 	INT less;
+
 	std::pair<std::wstring, std::wstring> repath;
+
 	for (auto it = this->repaths.begin(); it != this->repaths.end(); ++it)
 	{
 		if (lpathcmpW(it->first.data(), virtPath, &less))
@@ -318,6 +347,7 @@ HRESULT MyGetEnumCallback(
 	wchar_t physDir[PATH_BUFF_LEN] = { 0 };
 	wchar_t physDirAbsEntered[PATH_BUFF_LEN] = { 0 };
 	gSessStore.GetRepath(virtDir, physDir);
+	// physDir may be empty, making the backslash redundant
 	swprintf_s(physDirAbsEntered, L"%ls%ls%ls%ls", gSessStore.GetRoot(), 
 		lstrlenW(physDir) ? DIRECTORY_SEP_PATH : L"", physDir, ENTER_DIRECTORY_PATH);
 	// "C:\root" -> "C:\root\folder" -> "C:\root\folder\*"
@@ -342,12 +372,14 @@ HRESULT MyGetEnumCallback(
 	// Take: (ntfs (already filtered by searchExp) \cup (inclusions filtered)) \diff (exclusions)
 	// The searchExp filter thus can be inserted into inclusions
 
+	// TODO Apply dir workaround to inclusions, exclusions
+
 	for (auto it = inclusions.begin(); it != inclusions.end(); ++it)
 	{
 		// apply SearchExp
 		wchar_t virtFile[PATH_BUFF_LEN] = { 0 };
-		swprintf_s(virtFile, L"%ls%ls",
-			virtDir, (*it).data());
+		swprintf_s(virtFile, L"%ls%ls%ls",
+			virtDir, lstrlenW(virtDir) ? DIRECTORY_SEP_PATH : L"", (*it).data());
 
 		if (nullptr != searchExpression 
 			&& !PrjFileNameMatch(virtFile, searchExpression))
@@ -369,25 +401,43 @@ HRESULT MyGetEnumCallback(
 		// No need to scan for dir, since the current "view" is the parent of physFileAbs
 		winFileScan(physFileAbs, &fbi);
 
-		if (files.count(virtFile))
+		auto entry = (*it).data();
+		if (files.count(entry))
 		{
-			printf_s("[%s] inclusion clash with ntfs scan at %ls", __func__, physFileAbs);
+			printf_s("[%s] inclusion clash with ntfs scan at %ls\n", __func__, physFileAbs);
 		}
-		files[virtFile] = fbi;
+		files[entry] = fbi;
+
+#ifdef __DIRECTORY_WORKAROUND__
+		if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		{
+			wchar_t virtFileMOVE[PATH_BUFF_LEN] = { 0 };
+			swprintf_s(virtFileMOVE, L"%ls%ls", entry, SHADOW_FILE_SUFFIX);
+			fbi.IsDirectory = false;
+			files[virtFileMOVE] = fbi;
+		}
+#endif
 	}
 	for (auto it = exclusions.begin(); it != exclusions.end(); ++it)
 	{
-		wchar_t virtFile[PATH_BUFF_LEN] = { 0 };
-		swprintf_s(virtFile, L"%ls%ls",
-			virtDir, (*it).data());
+		auto entry = (*it).data();
 
-		if (files.count(virtFile))
+		if (files.count(entry))
 		{
-			files.erase(virtFile);
+			files.erase(entry);
+#ifdef __DIRECTORY_WORKAROUND__
+			// also remove the "_MOVE" file
+			wchar_t virtFileMOVE[PATH_BUFF_LEN] = { 0 };
+			swprintf_s(virtFileMOVE, L"%ls%ls", entry, SHADOW_FILE_SUFFIX);
+			if (files.count(virtFileMOVE))
+			{
+				files.erase(virtFileMOVE);
+			}
+#endif
 		}
 		else
 		{
-			printf_s("[%s] exclusion declared but entry not found %ls", __func__, (*it).data());
+			printf_s("[%s] exclusion declared but entry not found %ls\n", __func__, (*it).data());
 		}
 	}
 
@@ -556,13 +606,11 @@ HRESULT MyNotificationCallback(
 			printf_s("[%s] Added remap %ls %ls\n", __func__, srcBuff, dstBuff);
 		}
 		else
+#endif
 		{
 			gSessStore.AddRemap(callbackData->FilePathName, destinationFileName);
 			printf_s("[%s] Added remap %ls %ls\n", __func__, callbackData->FilePathName, destinationFileName);
 		}
-#else
-		throw ERROR_NOT_SUPPORTED;
-#endif
 	}
 	return S_OK;
 }

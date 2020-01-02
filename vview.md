@@ -20,9 +20,9 @@ Effective knowledge finding > Personal organization vs public view of directory
 
 <del>[vview-o2-kr2 🟢] The tracking info is persisted then restored (disk<->mem)</del>
 
-[vview-o2-kr2a 🟢] In-mem projections for directories to reflect on fs
+[vview-o2-kr2a ✔] In-mem projections for directories to reflect on fs
 
-[vview-o2-kr2b] Command-line & WinShell file renames to reflect on fs
+[vview-o2-kr2b 🟢] Command-line & WinShell file renames to reflect on fs
 
 [vview-o2-kr3] Restore the modified projection upon a new projection for all files previously projected
 
@@ -50,3 +50,11 @@ Yet it seems I finished [vview-o2-kr1] :)
 - Never erase while in loop of enumeration
 - Okay to use stl's default comparator for (std::wstring, wchar_t[])
 - [vview-o2-kr2a] almost done... enum done (bug not-free), placeholder pending
+
+## Design principles (1/2)
+- Lazy load the actual FS on disk as lazy as possible
+
+## Known Issues (1/3) => TODO
+- After vview, should investigate how to "sync back" changes; bypass dirty state or allow it?
+- Looks like file moves must be handled with explicit PrjFileDelete, otherwise the fs still caches the old placeholder... (ghost cache) Checked in code & it should be fine
+- [Bug fixed] Self cancelling remaps (a->b, then b->a) seems to make 1fs not responding to the newer change

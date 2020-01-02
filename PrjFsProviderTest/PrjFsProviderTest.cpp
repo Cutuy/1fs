@@ -14,12 +14,6 @@
 #define SrcName LR"(B:\content)"
 #define DstName LR"(A:\root)"
 
-const GUID instanceId = { 0xA2299CCC, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
-//const GUID instanceId = { 0xA2299CBC, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
-//const GUID instanceId = { 0xA2299CAC, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
-//const GUID instanceId = { 0xA2299C9C, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
-//const GUID instanceId = { 0xA2299C8C, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
-
 PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT instanceHandle;
 PRJ_CALLBACKS callbackTable2 = {
     MyStartEnumCallback,
@@ -94,10 +88,13 @@ void testStringUtils()
 
 void testProjectionReplays()
 {
-    gSessStore.AddRemap(LR"(a\g\h)", LR"(a\j)");
-    gSessStore.AddRemap(LR"(a\f)", LR"(a\j\p)");
     std::vector<std::wstring> inclusions;
     std::vector<std::wstring> exclusions;
+
+    // Case 1
+    gSessStore.AddRemap(LR"(a\g\h)", LR"(a\j)");
+    gSessStore.AddRemap(LR"(a\f)", LR"(a\j\p)");
+
     // view at a
     gSessStore.ReplayProjections(LR"(a)", &inclusions, &exclusions);
     assert(0 == lstrcmpW(inclusions.at(0).data(), LR"(j)"));
@@ -128,9 +125,40 @@ void testProjectionReplays()
     assert(exclusions.size() == 0);
     inclusions.clear();
     exclusions.clear();
-
+    // view at g
+    gSessStore.ReplayProjections(LR"(a\g)", &inclusions, &exclusions);
+    assert(inclusions.size() == 0);
+    assert(exclusions.at(0).data(), LR"(h)");
+    inclusions.clear();
+    exclusions.clear();
 
     gSessStore.TEST_ClearProjections();
+
+    // A bug found while in dev - the TIME of rule taking effect matters!
+    // Case 2
+    gSessStore.AddRemap(LR"(f0)", LR"(f1)");
+    gSessStore.AddRemap(LR"(f1\p)", LR"(f1\q)");
+    gSessStore.AddRemap(LR"(f1)", LR"(f2)");
+
+    // view at f2
+    gSessStore.ReplayProjections(LR"(f2)", &inclusions, &exclusions);
+    assert(inclusions.at(0).data(), LR"(m)");
+    assert(exclusions.at(0).data(), LR"(t)");
+    inclusions.clear();
+    exclusions.clear();
+
+    gSessStore.TEST_ClearProjections();
+
+    // Another bug... self cancelling rules
+    // This case reveals that the redesigned remap
+    // should be both ordered chronologically as well as unique in FromPath
+    gSessStore.AddRemap(LR"(f0\p)", LR"(p)");
+    gSessStore.AddRemap(LR"(p)", LR"(f0\p)");
+    
+    // view at root
+    gSessStore.ReplayProjections(LR"()", &inclusions, &exclusions);
+    assert(inclusions.size() == 0);
+    assert(exclusions.size() == 0);
     while (1);
 }
 
@@ -214,11 +242,27 @@ void applyTestRepaths()
 {
     gSessStore.AddRemap(LR"(f1-visa-renewal\DS160.pdf)", LR"(DS160.pdf)");
     gSessStore.AddRemap(LR"(f1-visa-renewal)", LR"(f2-visa-renewal)");
+    gSessStore.AddRemap(LR"(f2-visa-renewal\test.txt)", LR"(test.txt)");
+}
+
+HRESULT applyTestCleanup(PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT hContext)
+{
+    // Find entries in root
+    PRJ_UPDATE_FAILURE_CAUSES cause;
+    HRESULT hr;
+    DWORD flags;
+    flags = PRJ_UPDATE_ALLOW_DIRTY_DATA
+        | PRJ_UPDATE_ALLOW_DIRTY_METADATA
+        | PRJ_UPDATE_ALLOW_READ_ONLY
+        | PRJ_UPDATE_ALLOW_TOMBSTONE;
+    hr = PrjDeleteFile(hContext, LR"(\*)", (PRJ_UPDATE_TYPES)flags, &cause);
+    return hr;
 }
 
 int main()
 {
     std::cout << "Hello World!\n";
+    HRESULT hr;
 
     //testStringUtils();
     //testProjectionReplays();
@@ -226,9 +270,21 @@ int main()
 
     applyTestRepaths();
 
+    GUID instanceId;
+    hr = CoCreateGuid(&instanceId);
+    if (FAILED(hr))
+    {
+        printf_s("[%s] GUID creation failed\n", __func__);
+        return hr;
+    }
+
     // Mark as placeholder, or the root would not be a reparse point
-    HRESULT hr;
     hr = PrjMarkDirectoryAsPlaceholder(DstName, nullptr, nullptr, &instanceId);
+    if (FAILED(hr))
+    {
+        printf_s("[%s] Failed to mark virtualization root (0x%08x)\n", __func__, hr);
+        return hr;
+    }
     
     PRJ_NOTIFICATION_MAPPING notificationMappings[1];
     notificationMappings[0].NotificationRoot = L"";
@@ -248,6 +304,7 @@ int main()
     if (FAILED(hr)) 
     {
         printf_s("[%s] PrjStartVirtualizing failed with %ld", __func__, hr);
+        return hr;
     }
 
     // TODO Entering "tracking" mode, where any file moves within src

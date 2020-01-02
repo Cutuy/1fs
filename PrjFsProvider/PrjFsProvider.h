@@ -52,7 +52,7 @@ struct PrjFsMapComparator
 	}
 };
 
-struct RepathComparator
+struct ProjectionComparator
 {
 	bool operator() (const std::wstring& lhs, const std::wstring& rhs) const {
 		return -1 == lstrcmpW(lhs.data(), rhs.data());
@@ -69,8 +69,7 @@ public:
 };
 
 typedef PrjFsSessionRuntime* LPPrjFsSessionRuntime;
-
-
+typedef std::map<std::wstring, std::wstring, ProjectionComparator> proj_t;
 // Expects singleton
 class PrjFsSessionStore
 {
@@ -79,10 +78,9 @@ private:
 	std::vector<PrjFsSessionRuntime*> sessions;
 	
 	// Virtual to *physical* path mapping, without guaranteeing existence of virtual path
-	std::map<std::wstring, std::wstring, RepathComparator> repaths;
+	proj_t repaths;
 	
-	// Tracked user operations, ordered chronologically
-	// Both fromPath and toPath could be virtual
+	// Physical to physical path mapping for entry visibility calculation
 	std::vector<PrjFsMap> remaps; // user ops as well as backtracks
 
 	void AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath);
@@ -102,7 +100,7 @@ public:
 	);
 
 	// Find a repath that has the longest matching prefix path
-	void GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath);
+	void GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath) const;
 
 	void TEST_ClearProjections();
 };
