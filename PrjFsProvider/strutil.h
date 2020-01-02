@@ -6,6 +6,10 @@
 
 BOOL EndsWith(LPCWSTR str, LPCWSTR suffix);
 
+#ifdef __DIRECTORY_WORKAROUND__
+BOOL IsShadowFile(LPCWSTR fileName);
+#endif
+
 // This function does not guarantee a valid path compare
 void ReplacePrefix(__in LPCWSTR prefixToReplace, __in LPCWSTR prefixToSet, __inout LPWSTR inOutBuff);
 

@@ -11,8 +11,8 @@
 
 #pragma comment(lib, "ProjectedFSLib.lib")
 
-#define SrcName LR"(B:\content\)"
-#define DstName LR"(A:\root\)"
+#define SrcName LR"(B:\content)"
+#define DstName LR"(A:\root)"
 
 const GUID instanceId = { 0xA2299CBC, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
 
@@ -96,17 +96,17 @@ void testProjectionReplays()
 {
     gSessStore.AddRemap(LR"(a\g\h)", LR"(a\j)");
     gSessStore.AddRemap(LR"(a\f)", LR"(a\j\p)");
-    std::vector<LPCWSTR> inclusions;
-    std::vector<LPCWSTR> exclusions;
+    std::vector<std::wstring> inclusions;
+    std::vector<std::wstring> exclusions;
     // view at a
     gSessStore.ReplayProjections(LR"(a)", &inclusions, &exclusions);
-    assert(0 == lstrcmpW(inclusions.at(0), LR"(j)"));
-    assert(0 == lstrcmpW(exclusions.at(0), LR"(f)"));
+    assert(0 == lstrcmpW(inclusions.at(0).data(), LR"(j)"));
+    assert(0 == lstrcmpW(exclusions.at(0).data(), LR"(f)"));
     inclusions.clear();
     exclusions.clear();
     // view at j
     gSessStore.ReplayProjections(LR"(a\j)", &inclusions, &exclusions);
-    assert(0 == lstrcmpW(inclusions.at(0), LR"(p)"));
+    assert(0 == lstrcmpW(inclusions.at(0).data(), LR"(p)"));
     assert(exclusions.size() == 0);
     inclusions.clear();
     exclusions.clear();
@@ -210,6 +210,12 @@ void testRepathExpansions()
     while (1);
 }
 
+void applyTestRepaths()
+{
+    gSessStore.AddRemap(LR"(f1-visa-renewal\DS160.pdf)", LR"(DS160.pdf)");
+    gSessStore.AddRemap(LR"(f1-visa-renewal)", LR"(f2-visa-renewal)");
+}
+
 int main()
 {
     std::cout << "Hello World!\n";
@@ -217,6 +223,8 @@ int main()
     //testStringUtils();
     //testProjectionReplays();
     //testRepathExpansions();
+
+    applyTestRepaths();
 
     // Mark as placeholder, or the root would not be a reparse point
     HRESULT hr;

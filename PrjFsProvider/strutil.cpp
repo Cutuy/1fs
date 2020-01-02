@@ -11,6 +11,13 @@ BOOL EndsWith(LPCWSTR str, LPCWSTR suffix)
 	return nStr >= nSuffix && 0 == lstrcmpW(str + nStr - nSuffix, suffix);
 }
 
+#ifdef __DIRECTORY_WORKAROUND__
+BOOL IsShadowFile(LPCWSTR fileName)
+{
+	return EndsWith(fileName, SHADOW_FILE_SUFFIX);
+}
+#endif
+
 void ReplacePrefix(__in LPCWSTR prefixToReplace, __in LPCWSTR prefixToSet, __inout LPWSTR inOutBuff)
 {
 	if (!wcsstr(inOutBuff, prefixToReplace)) 

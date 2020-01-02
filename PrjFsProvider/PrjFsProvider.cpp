@@ -17,12 +17,7 @@ extern PrjFsSessionStore gSessStore;
 
 
 
-#ifdef __DIRECTORY_WORKAROUND__
-inline BOOL IsShadowFile(LPCWSTR fileName)
-{
-	return EndsWith(fileName, SHADOW_FILE_SUFFIX);
-}
-#endif
+
 
 
 PrjFsSessionStore::PrjFsSessionStore(LPCWSTR root): srcName(root)
@@ -50,16 +45,25 @@ LPPrjFsSessionRuntime PrjFsSessionStore::GetSession(LPCGUID lpcGuid)
 
 void PrjFsSessionStore::FreeSession(LPCGUID lpcGuid)
 {
-	for (auto it = this->sessions.begin(); it != this->sessions.end(); ++it)
-	{
-		PrjFsSessionRuntime* sess = *it;
-		if (0 == memcmp(&sess->EnumId, lpcGuid, sizeof(GUID)))
-		{
-			delete *it;
-			this->sessions.erase(it);
-			break;
-		}
-	}
+	// Erase while in enumeration
+	this->sessions.erase(
+		std::remove_if(
+			this->sessions.begin(),
+			this->sessions.end(),
+			[lpcGuid](PrjFsSessionRuntime* const& sess) {
+				if (0 == memcmp(&sess->EnumId, lpcGuid, sizeof(GUID)))
+				{
+					delete sess;
+					return true;
+				}
+				else
+				{
+					return false;
+				}
+			}
+		),
+		this->sessions.end()
+	);
 }
 
 int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
@@ -76,8 +80,8 @@ int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 
 void PrjFsSessionStore::ReplayProjections(
 	__in PCWSTR virtDir, 
-	__out std::vector<LPCWSTR> *virtInclusions,
-	__out std::vector<LPCWSTR> *virtExclusions
+	__out std::vector<std::wstring> *virtInclusions,
+	__out std::vector<std::wstring> *virtExclusions
 )
 {
 	for (auto it = this->remaps.begin(); it != this->remaps.end(); ++it)
@@ -98,7 +102,7 @@ void PrjFsSessionStore::ReplayProjections(
 				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
 				GetPathLastComponent(proj.ToPath, pathBuff);
 
-				std::vector<LPCWSTR>::iterator it_f;
+				std::vector<std::wstring>::iterator it_f;
 				if (virtExclusions->end() != (it_f = std::find(virtExclusions->begin(), virtExclusions->end(), pathBuff)))
 				{
 					virtExclusions->erase(it_f);
@@ -114,7 +118,7 @@ void PrjFsSessionStore::ReplayProjections(
 				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
 				GetPathLastComponent(proj.FromPath, pathBuff);
 
-				std::vector<LPCWSTR>::iterator it_f;
+				std::vector<std::wstring>::iterator it_f;
 				if (virtInclusions->end() != (it_f = std::find(virtInclusions->begin(), virtInclusions->end(), pathBuff)))
 				{
 					virtInclusions->erase(it_f);
@@ -303,16 +307,12 @@ HRESULT MyGetEnumCallback(
 
 	LPCWSTR virtDir = callbackData->FilePathName;
 
-	// Find files by 1fs
-	// These are just symbols done without accessing the FS on disk
-	std::vector<LPCWSTR> inclusions;
-	std::vector<LPCWSTR> exclusions;
-	gSessStore.ReplayProjections(virtDir, &inclusions, &exclusions);
-	// TODO Fill PRJ_FILE_BASIC_INFO for inclusions
+	// key: virtFile | virtDirectory
+	std::map<std::wstring, PRJ_FILE_BASIC_INFO> files;
 
+	// Find files by ascending priority
 
 	// Fill files by NTFS
-	std::vector<PRJ_FILE_BASIC_INFO> files;
 	HRESULT hr;
 
 	wchar_t physDir[PATH_BUFF_LEN] = { 0 };
@@ -320,12 +320,12 @@ HRESULT MyGetEnumCallback(
 	gSessStore.GetRepath(virtDir, physDir);
 	swprintf_s(physDirAbsEntered, L"%ls%ls%ls", gSessStore.GetRoot(), physDir, ENTER_DIRECTORY_PATH);
 	// "C:\root\" -> "C:\root\folder" -> "C:\root\folder\*"
-	hr = winFileDir(
+	hr = winFileDirScan(
 		physDirAbsEntered,
 		searchExpression,
 		isSingleEntry,
 		dirEntryBufferHandle,
-		lpSess,
+		lpSess, // TODO remove session logic from dir scan
 		&files
 	);
 	if (!SUCCEEDED(hr))
@@ -333,7 +333,68 @@ HRESULT MyGetEnumCallback(
 		return hr;
 	}
 
-	// TODO Remove exclusions from files
+	// Find files by 1fs
+	std::vector<std::wstring> exclusions;
+	std::vector<std::wstring> inclusions;
+	gSessStore.ReplayProjections(virtDir, &inclusions, &exclusions);
+
+	// Take: (ntfs (already filtered by searchExp) \cup (inclusions filtered)) \diff (exclusions)
+	// The searchExp filter thus can be inserted into inclusions
+
+	for (auto it = inclusions.begin(); it != inclusions.end(); ++it)
+	{
+		// apply SearchExp
+		wchar_t virtFile[PATH_BUFF_LEN] = { 0 };
+		swprintf_s(virtFile, L"%ls%ls",
+			virtDir, (*it).data());
+
+		if (nullptr != searchExpression 
+			&& !PrjFileNameMatch(virtFile, searchExpression))
+		{
+			continue;
+		}
+
+		// virt -> phys
+		wchar_t physFile[PATH_BUFF_LEN] = { 0 };
+		gSessStore.GetRepath(virtFile, physFile);
+
+		// phys -> abs phys
+		//wchar_t (&physFileAbs)[PATH_BUFF_LEN] = virtFile; // too sao
+		wchar_t physFileAbs[PATH_BUFF_LEN] = { 0 };
+		swprintf_s(physFileAbs, L"%ls%ls%ls",
+			gSessStore.GetRoot(), DIRECTORY_SEP_PATH, physFile);
+		
+		PRJ_FILE_BASIC_INFO fbi = {};
+		// No need to scan for dir, since the current "view" is the parent of physFileAbs
+		winFileScan(physFileAbs, &fbi);
+
+		if (files.count(virtFile))
+		{
+			printf_s("[%s] inclusion clash with ntfs scan at %ls", __func__, physFileAbs);
+		}
+		files[virtFile] = fbi;
+	}
+	for (auto it = exclusions.begin(); it != exclusions.end(); ++it)
+	{
+		wchar_t virtFile[PATH_BUFF_LEN] = { 0 };
+		swprintf_s(virtFile, L"%ls%ls",
+			virtDir, (*it).data());
+
+		if (files.count(virtFile))
+		{
+			files.erase(virtFile);
+		}
+		else
+		{
+			printf_s("[%s] exclusion declared but entry not found %ls", __func__, (*it).data());
+		}
+	}
+
+	std::map<std::wstring, PRJ_FILE_BASIC_INFO>::iterator it = files.begin();
+
+	std::for_each(files.begin(), isSingleEntry? (++it) : files.end(), [dirEntryBufferHandle](std::pair<const std::wstring, PRJ_FILE_BASIC_INFO>& pair) {
+		PrjFillDirEntryBuffer(pair.first.data(), &pair.second, dirEntryBufferHandle);
+	});
 
 	return S_OK;
 }

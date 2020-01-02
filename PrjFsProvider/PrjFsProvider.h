@@ -94,11 +94,11 @@ public:
 	void FreeSession(LPCGUID lpcGuid);
 	int AddRemap(PCWSTR from, PCWSTR to);
 
-	// Only valid for dir enumeartion at depth of 1
+	// Find path component at depth of 1 done without accessing the FS on disk
 	void ReplayProjections(
-		__in PCWSTR dir,
-		__out std::vector<LPCWSTR> *inclusions,
-		__out std::vector<LPCWSTR> *exclusions
+		__in PCWSTR virtDir,
+		__out std::vector<std::wstring>* virtInclusions,
+		__out std::vector<std::wstring>* virtExclusions
 	);
 
 	// Find a repath that has the longest matching prefix path
