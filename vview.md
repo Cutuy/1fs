@@ -49,3 +49,4 @@ Yet it seems I finished [vview-o2-kr1] :)
 - Never use LPCWSTR (char ptr) as item type for stl containers; otherwise push_back will not copy the value
 - Never erase while in loop of enumeration
 - Okay to use stl's default comparator for (std::wstring, wchar_t[])
+- [vview-o2-kr2a] almost done... enum done (bug not-free), placeholder pending

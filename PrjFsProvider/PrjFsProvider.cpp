@@ -318,8 +318,9 @@ HRESULT MyGetEnumCallback(
 	wchar_t physDir[PATH_BUFF_LEN] = { 0 };
 	wchar_t physDirAbsEntered[PATH_BUFF_LEN] = { 0 };
 	gSessStore.GetRepath(virtDir, physDir);
-	swprintf_s(physDirAbsEntered, L"%ls%ls%ls", gSessStore.GetRoot(), physDir, ENTER_DIRECTORY_PATH);
-	// "C:\root\" -> "C:\root\folder" -> "C:\root\folder\*"
+	swprintf_s(physDirAbsEntered, L"%ls%ls%ls%ls", gSessStore.GetRoot(), 
+		lstrlenW(physDir) ? DIRECTORY_SEP_PATH : L"", physDir, ENTER_DIRECTORY_PATH);
+	// "C:\root" -> "C:\root\folder" -> "C:\root\folder\*"
 	hr = winFileDirScan(
 		physDirAbsEntered,
 		searchExpression,
@@ -392,9 +393,12 @@ HRESULT MyGetEnumCallback(
 
 	std::map<std::wstring, PRJ_FILE_BASIC_INFO>::iterator it = files.begin();
 
-	std::for_each(files.begin(), isSingleEntry? (++it) : files.end(), [dirEntryBufferHandle](std::pair<const std::wstring, PRJ_FILE_BASIC_INFO>& pair) {
-		PrjFillDirEntryBuffer(pair.first.data(), &pair.second, dirEntryBufferHandle);
-	});
+	if (files.size())
+	{
+		std::for_each(files.begin(), isSingleEntry ? (++it) : files.end(), [dirEntryBufferHandle](std::pair<const std::wstring, PRJ_FILE_BASIC_INFO>& pair) {
+			PrjFillDirEntryBuffer(pair.first.data(), &pair.second, dirEntryBufferHandle);
+		});
+	}
 
 	return S_OK;
 }
@@ -405,59 +409,21 @@ HRESULT MyGetPlaceholderCallback(
 {
 	printf_s("[%s] filePath %ls\n", __func__, callbackData->FilePathName);
 
-	// Build absolute path
-	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
-	lstrcatW(pathBuff, gSessStore.GetRoot());
-	lstrcatW(pathBuff, DIRECTORY_SEP_PATH);
-	lstrcatW(pathBuff, callbackData->FilePathName);
-
-	UINT32 fileAttr = GetFileAttributes(pathBuff);
-
-#ifdef __DIRECTORY_WORKAROUND__
-	if (IsShadowFile(pathBuff))
-	{
-		printf_s("[%s] found shadow file %ls\n", __func__, pathBuff);
-		fileAttr = FILE_ATTRIBUTE_NORMAL;
-	}
-#endif
-	
-	if (INVALID_FILE_ATTRIBUTES == fileAttr)
-	{
-		printf_s("[%s] file not found for %ls\n", __func__, pathBuff);
-		// When renaming/moving, this cb will be called (not desired) unless
-		// PRJ_QUERY_FILE_NAME_CB is provided
-		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
-	}
-
-	HANDLE hFile;
-	hFile = CreateFile(pathBuff,               // file to open
-		GENERIC_READ,          // open for reading
-		FILE_SHARE_READ,       // share for reading
-		NULL,                  // default security
-		OPEN_EXISTING,         // existing file only
-		FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, // normal file
-		NULL);
-	LARGE_INTEGER fileSize;
-	if (hFile == INVALID_HANDLE_VALUE || !GetFileSizeEx(hFile, &fileSize))
-	{
-		printf_s("[%s] file size failed to get\n", __func__);
-		fileSize.LowPart = 0;
-		fileSize.HighPart = 0;
-	}
-	if (hFile != INVALID_HANDLE_VALUE)
-	{
-		CloseHandle(hFile);
-	}
+	LPCWSTR virtFile = callbackData->FilePathName;
+	wchar_t physFile[PATH_BUFF_LEN] = { 0 };
+	wchar_t physFileAbs[PATH_BUFF_LEN] = { 0 };
+	gSessStore.GetRepath(virtFile, physFile);
+	swprintf_s(physFileAbs, L"%ls%ls%ls",
+		gSessStore.GetRoot(), DIRECTORY_SEP_PATH, physFile);
 
 	PRJ_FILE_BASIC_INFO fileBasicInfo = {};
-	fileBasicInfo.IsDirectory = (fileAttr & FILE_ATTRIBUTE_DIRECTORY) != 0;
-	fileBasicInfo.FileAttributes = fileAttr;
-	fileBasicInfo.FileSize = fileSize.QuadPart;
+	winFileScan(physFileAbs, &fileBasicInfo);
+
 	PRJ_PLACEHOLDER_INFO placeholderInfo = {};
 	placeholderInfo.FileBasicInfo = fileBasicInfo;
 
 	PrjWritePlaceholderInfo(callbackData->NamespaceVirtualizationContext,
-		callbackData->FilePathName,
+		virtFile,
 		&placeholderInfo,
 		sizeof(placeholderInfo));
 
@@ -477,6 +443,13 @@ HRESULT MyGetFileDataCallback(
 		return ERROR_IMPLEMENTATION_LIMIT;
 	}
 
+	LPCWSTR virtFile = callbackData->FilePathName;
+	wchar_t physFile[PATH_BUFF_LEN] = { 0 };
+	wchar_t physFileAbs[PATH_BUFF_LEN] = { 0 };
+	gSessStore.GetRepath(virtFile, physFile);
+	swprintf_s(physFileAbs, L"%ls%ls%ls",
+		gSessStore.GetRoot(), DIRECTORY_SEP_PATH, physFile);
+
 	void* rwBuffer;
 	rwBuffer = PrjAllocateAlignedBuffer(callbackData->NamespaceVirtualizationContext, length);
 	if (rwBuffer == NULL)
@@ -484,15 +457,10 @@ HRESULT MyGetFileDataCallback(
 		return E_OUTOFMEMORY;
 	}
 
-	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
-	lstrcatW(pathBuff, gSessStore.GetRoot());
-	lstrcatW(pathBuff, DIRECTORY_SEP_PATH);
-	lstrcatW(pathBuff, callbackData->FilePathName);
-
 	
 	HANDLE hFile;
 
-	hFile = CreateFile(pathBuff,               // file to open
+	hFile = CreateFile(physFileAbs,               // file to open
 		GENERIC_READ | GENERIC_WRITE,          // open for reading
 		FILE_SHARE_READ,       // share for reading
 		NULL,                  // default security
