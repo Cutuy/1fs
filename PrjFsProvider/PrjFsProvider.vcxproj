@@ -152,6 +152,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="PrjFsProvider.h" />
     <ClInclude Include="strutil.h" />
+    <ClInclude Include="WinFileProvider.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -162,6 +163,7 @@
     </ClCompile>
     <ClCompile Include="PrjFsProvider.cpp" />
     <ClCompile Include="strutil.cpp" />
+    <ClCompile Include="WinFileProvider.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

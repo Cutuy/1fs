@@ -14,7 +14,9 @@
 #define SrcName LR"(B:\content\)"
 #define DstName LR"(A:\root\)"
 
-const GUID instanceId = { 0xA2299CAC, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
+const GUID instanceId = { 0xA2299CBC, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
+
+//const GUID instanceId = { 0xA2299CAC, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
 //const GUID instanceId = { 0xA2299C9C, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
 //const GUID instanceId = { 0xA2299C8C, 0x7832, 0x4CBA, {0xA0, 0x22, 0x60, 0x75, 0x2A, 0x7E, 0x3E, 0x7F} };
 
@@ -114,6 +116,19 @@ void testProjectionReplays()
     assert(exclusions.size() == 0);
     inclusions.clear();
     exclusions.clear();
+    // view at root
+    gSessStore.ReplayProjections(LR"()", &inclusions, &exclusions);
+    assert(inclusions.size() == 0);
+    assert(exclusions.size() == 0);
+    inclusions.clear();
+    exclusions.clear();
+    // view at arbitrary invalid paths
+    gSessStore.ReplayProjections(LR"(a\m)", &inclusions, &exclusions);
+    assert(inclusions.size() == 0);
+    assert(exclusions.size() == 0);
+    inclusions.clear();
+    exclusions.clear();
+
 
     gSessStore.TEST_ClearProjections();
     while (1);
@@ -131,6 +146,7 @@ void testRepathExpansions()
     gSessStore.AddRemap(LR"(a\f)", LR"(a\j\p)");
     gSessStore.AddRemap(LR"(a\j)", LR"(a\k)");
     gSessStore.AddRemap(LR"(a\j\c)", LR"(a\g\c)");
+    gSessStore.AddRemap(LR"(a\m)", LR"(a\k\q)");
 
     wchar_t pathBuff[PATH_BUFF_LEN] = {0};
 
@@ -178,8 +194,16 @@ void testRepathExpansions()
     assert(0 == lstrcmpW(pathBuff, LR"(a\g\h\c\d)"));
     wmemset(pathBuff, 0, PATH_BUFF_LEN);
 
-    gSessStore.GetRepath(LR"(a\g\ccc)", pathBuff);
-    assert(0 == lstrcmpW(pathBuff, LR"(a\g\ccc)"));
+    gSessStore.GetRepath(LR"(a\g\d)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\g\d)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\kkk)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\kkk)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\k\q\d)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\m\d)")); // yes!
     wmemset(pathBuff, 0, PATH_BUFF_LEN);
 
     gSessStore.TEST_ClearProjections();
@@ -192,11 +216,11 @@ int main()
 
     //testStringUtils();
     //testProjectionReplays();
-    testRepathExpansions();
+    //testRepathExpansions();
 
     // Mark as placeholder, or the root would not be a reparse point
     HRESULT hr;
-    hr = PrjMarkDirectoryAsPlaceholder(DstName, nullptr, nullptr, &instanceId);
+    //hr = PrjMarkDirectoryAsPlaceholder(DstName, nullptr, nullptr, &instanceId);
     
     PRJ_NOTIFICATION_MAPPING notificationMappings[1];
     notificationMappings[0].NotificationRoot = L"";

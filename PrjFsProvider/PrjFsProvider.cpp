@@ -7,9 +7,11 @@
 #include <stdio.h>
 #include <strsafe.h>
 #include <assert.h>
+#include <algorithm>
 
 #include "strutil.h"
 #include "PrjFsProvider.h"
+#include "WinFileProvider.h"
 
 extern PrjFsSessionStore gSessStore;
 
@@ -73,9 +75,9 @@ int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 }
 
 void PrjFsSessionStore::ReplayProjections(
-	__in PCWSTR dir, 
-	__out std::vector<LPCWSTR> *inclusions,
-	__out std::vector<LPCWSTR> *exclusions
+	__in PCWSTR virtDir, 
+	__out std::vector<LPCWSTR> *virtInclusions,
+	__out std::vector<LPCWSTR> *virtExclusions
 )
 {
 	for (auto it = this->remaps.begin(); it != this->remaps.end(); ++it)
@@ -85,31 +87,39 @@ void PrjFsSessionStore::ReplayProjections(
 		
 		int less;
 
-		if (hr = lpathcmpW(proj.ToPath, dir, &less))
+		if (hr = lpathcmpW(proj.ToPath, virtDir, &less))
 		{
 			if (less <= 0)
 			{
-				// add to repath dict 
-				//this->AddRepath(proj.ToPath, proj.FromPath);
-				
+				// nop
 			}
 			else if (1 == less)
 			{
-				wchar_t pathBuff[PATH_BUFF_LEN];
+				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
 				GetPathLastComponent(proj.ToPath, pathBuff);
-				inclusions->push_back(pathBuff);
-				// add to repath dict 
-				//this->AddRepath(proj.ToPath, proj.FromPath);
+
+				std::vector<LPCWSTR>::iterator it_f;
+				if (virtExclusions->end() != (it_f = std::find(virtExclusions->begin(), virtExclusions->end(), pathBuff)))
+				{
+					virtExclusions->erase(it_f);
+				}
+				virtInclusions->push_back(pathBuff);
 			}
 		}
 		// no else!
-		if (hr = lpathcmpW(proj.FromPath, dir, &less))
+		if (hr = lpathcmpW(proj.FromPath, virtDir, &less))
 		{
 			if (1 == less)
 			{
-				wchar_t pathBuff[PATH_BUFF_LEN];
+				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
 				GetPathLastComponent(proj.FromPath, pathBuff);
-				exclusions->push_back(pathBuff);
+
+				std::vector<LPCWSTR>::iterator it_f;
+				if (virtInclusions->end() != (it_f = std::find(virtInclusions->begin(), virtInclusions->end(), pathBuff)))
+				{
+					virtInclusions->erase(it_f);
+				}
+				virtExclusions->push_back(pathBuff);
 				// ignore (since the repath will be added by rule #1 or #2 at some dir)
 			}
 		}
@@ -150,7 +160,7 @@ void PrjFsSessionStore::AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath)
 				printf_s("[%s] Possible illegal repath insertion due to collision of\n \
 				(new) %ls -> %ls\n \
 				(old) %ls -> %ls\n",
-				__func__, map.FromPath, map.ToPath, pair.first, pair.second);
+				__func__, map.FromPath, map.ToPath, pair.first.data(), pair.second.data());
 				return;
 			}
 			else
@@ -172,21 +182,29 @@ insert_one:
 
 void PrjFsSessionStore::GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath)
 {
-	INT least = 0;
+	INT most = MININT;
 	lstrcpyW(physPath, virtPath);
 
+	// Find and replace by the repath of the closest parent (or self)
+	// Do not change physPath while in loop, otherwise it may affect later iterations
 	INT less;
+	std::pair<std::wstring, std::wstring> repath;
 	for (auto it = this->repaths.begin(); it != this->repaths.end(); ++it)
 	{
-		auto remap = *it;
-		if (lpathcmpW(remap.first.data(), virtPath, &less))
+		if (lpathcmpW(it->first.data(), virtPath, &less))
 		{
-			if (less <= least)
+			// If is parent and is the most closest so far
+			if (less <= 0 && less >= most)
 			{
-				least = less;
-				ReplacePrefix(remap.first.data(), remap.second.data(), physPath);
+				most = less;
+				repath.first = it->first;
+				repath.second = it->second;
 			}
 		}
+	}
+	if (most <= 0)
+	{
+		ReplacePrefix(repath.first.data(), repath.second.data(), physPath);
 	}
 }
 
@@ -283,93 +301,39 @@ HRESULT MyGetEnumCallback(
 	BOOL isSingleEntry = (callbackData->Flags & PRJ_CB_DATA_FLAG_ENUM_RETURN_SINGLE_ENTRY) != 0;
 	// fileName will be in searchExp
 
-	/*
-	if (nullptr != searchExpression && PrjDoesNameContainWildCards(searchExpression))
-	{
-		throw ERROR_INVALID_DATA;
-	}
-	*/
+	LPCWSTR virtDir = callbackData->FilePathName;
 
-	// Check repath of directory or file
-	//gSessStore.GetRepath(callbackData->FilePathName);
-
-
-	// Apply remaps
+	// Find files by 1fs
+	// These are just symbols done without accessing the FS on disk
 	std::vector<LPCWSTR> inclusions;
 	std::vector<LPCWSTR> exclusions;
-	gSessStore.ReplayProjections(callbackData->FilePathName, &inclusions, &exclusions);
+	gSessStore.ReplayProjections(virtDir, &inclusions, &exclusions);
+	// TODO Fill PRJ_FILE_BASIC_INFO for inclusions
 
-	// Build absolute path
-	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
-	swprintf_s(pathBuff, L"%ls%ls%ls", gSessStore.GetRoot(), callbackData->FilePathName, ENTER_DIRECTORY_PATH);
-	// "C:\root\" -> "C:\root\folder" -> "C:\root\folder\*"
 
-	HANDLE hFind = INVALID_HANDLE_VALUE;
-	WIN32_FIND_DATA ffd;
-	hFind = FindFirstFile(pathBuff, &ffd);
-
-	if (INVALID_HANDLE_VALUE == hFind)
-	{
-		printf_s("[%s] Open hFile failed for %ls\n", __func__, pathBuff);
-		return ERROR_INVALID_HANDLE;
-	}
-
+	// Fill files by NTFS
+	std::vector<PRJ_FILE_BASIC_INFO> files;
 	HRESULT hr;
-	DWORD dwError = 0;
 
-	do
+	wchar_t physDir[PATH_BUFF_LEN] = { 0 };
+	wchar_t physDirAbsEntered[PATH_BUFF_LEN] = { 0 };
+	gSessStore.GetRepath(virtDir, physDir);
+	swprintf_s(physDirAbsEntered, L"%ls%ls%ls", gSessStore.GetRoot(), physDir, ENTER_DIRECTORY_PATH);
+	// "C:\root\" -> "C:\root\folder" -> "C:\root\folder\*"
+	hr = winFileDir(
+		physDirAbsEntered,
+		searchExpression,
+		isSingleEntry,
+		dirEntryBufferHandle,
+		lpSess,
+		&files
+	);
+	if (!SUCCEEDED(hr))
 	{
-		if (nullptr == searchExpression || PrjFileNameMatch(ffd.cFileName, searchExpression))
-		{
-			PRJ_FILE_BASIC_INFO fileBasicInfo = {};
-			fileBasicInfo.IsDirectory = (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-			fileBasicInfo.FileSize = (((INT64)ffd.nFileSizeHigh) << 32) | ffd.nFileSizeLow;
-			fileBasicInfo.FileAttributes = ffd.dwFileAttributes;
-
-			hr = PrjFillDirEntryBuffer(ffd.cFileName, &fileBasicInfo, dirEntryBufferHandle);
-
-#ifdef __DIRECTORY_WORKAROUND__
-			// Create shadow file for directory
-			if (fileBasicInfo.IsDirectory 
-				&& 0 != lstrcmpW(ffd.cFileName, L".") 
-				&& 0 != lstrcmpW(ffd.cFileName, L".."))
-			{
-				wmemset(pathBuff, 0, PATH_BUFF_LEN);
-				swprintf_s(pathBuff, L"%ls%ls", ffd.cFileName, SHADOW_FILE_SUFFIX);
-				fileBasicInfo.IsDirectory = false;
-				fileBasicInfo.FileSize = 0;
-				fileBasicInfo.FileAttributes = FILE_ATTRIBUTE_NORMAL;
-				hr = PrjFillDirEntryBuffer(pathBuff, &fileBasicInfo, dirEntryBufferHandle);
-
-				printf_s("[%s] Shadow file created for %ls\n", __func__, pathBuff);
-			}
-#endif
-			
-			if (FAILED(hr)) {
-				printf_s("[%s] PrjFillDirEntryBuffer failed %ld\n", __func__, hr);
-				return hr;
-			}
-			else if (isSingleEntry)
-			{
-				goto l_getEnumComplete;
-			}
-		}
-	} while (FindNextFile(hFind, &ffd) != 0);
-
-	dwError = GetLastError();
-	if (dwError != ERROR_NO_MORE_FILES)
-	{
-		printf_s("[%s] Unexpected last error\n", __func__);
-		return ERROR;
+		return hr;
 	}
 
-l_getEnumComplete:
-	// Search into a directory will come 2 requests, the first will be singleEntry with "*" as searchExp
-	// Avoid blocking the second call by testing isSingleEntry
-	if (!isSingleEntry)
-	{
-		lpSess->IsGetEnumComplete = true;
-	}
+	// TODO Remove exclusions from files
 
 	return S_OK;
 }

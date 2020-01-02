@@ -78,10 +78,11 @@ private:
 	LPCWSTR srcName;
 	std::vector<PrjFsSessionRuntime*> sessions;
 	
-	// Virtual to physical path mapping, without guaranteeing existence of virtual path
+	// Virtual to *physical* path mapping, without guaranteeing existence of virtual path
 	std::map<std::wstring, std::wstring, RepathComparator> repaths;
 	
-	// Physical to virtual path mapping
+	// Tracked user operations, ordered chronologically
+	// Both fromPath and toPath could be virtual
 	std::vector<PrjFsMap> remaps; // user ops as well as backtracks
 
 	void AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath);
@@ -92,6 +93,8 @@ public:
 	LPPrjFsSessionRuntime GetSession(LPCGUID lpcGuid);
 	void FreeSession(LPCGUID lpcGuid);
 	int AddRemap(PCWSTR from, PCWSTR to);
+
+	// Only valid for dir enumeartion at depth of 1
 	void ReplayProjections(
 		__in PCWSTR dir,
 		__out std::vector<LPCWSTR> *inclusions,

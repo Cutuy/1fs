@@ -15,7 +15,7 @@ void ReplacePrefix(__in LPCWSTR prefixToReplace, __in LPCWSTR prefixToSet, __ino
 {
 	if (!wcsstr(inOutBuff, prefixToReplace)) 
 	{
-		printf_s("[%s] Prefix %ls not found in %ls", prefixToReplace, inOutBuff);
+		printf_s("[%s] Prefix %ls not found in %ls", __func__, prefixToReplace, inOutBuff);
 		return;
 	}
 	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };

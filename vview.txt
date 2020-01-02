@@ -30,3 +30,5 @@ Needs to break down abit for [vview-o2-kr1] because it is f* too hard!
 ## Notes (1/1)
 Yet it seems I finished [vview-o2-kr1] :)
 
+## Technical design principles
+- Always lazy load/find the physical path upon request; never do the opposite
