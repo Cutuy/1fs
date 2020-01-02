@@ -10,8 +10,8 @@ Effective knowledge finding > Personal organization vs public view of directory
 [vview-o1-kr3 ✔] The file data, upon requested, is "projected" from its original location
 <del>[vview-o2-kr1] Track moves of each individual file</del>
 [vview-o2-kr1a ✔] Track moves of file for enumeration of directory
-[vview-o2-kr1b 🟢] Track moves of file for finding physical path of a placeholder
-[vview-o2-kr2] The tracking info is persisted then restored (disk<->mem)
+[vview-o2-kr1b ✔] Track moves of file for finding physical path of a placeholder
+[vview-o2-kr2 🟢] The tracking info is persisted then restored (disk<->mem)
 [vview-o2-kr3] Restore the modified projection upon a new projection for all files previously projected
 
 ## Next (12/28)
@@ -26,3 +26,7 @@ It seems ProjFS does not support rename/move of a directory. This, however, is c
 
 ## Notes (12/31)
 Needs to break down abit for [vview-o2-kr1] because it is f* too hard!
+
+## Notes (1/1)
+Yet it seems I finished [vview-o2-kr1] :)
+

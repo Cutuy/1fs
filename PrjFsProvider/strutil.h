@@ -6,6 +6,9 @@
 
 BOOL EndsWith(LPCWSTR str, LPCWSTR suffix);
 
+// This function does not guarantee a valid path compare
+void ReplacePrefix(__in LPCWSTR prefixToReplace, __in LPCWSTR prefixToSet, __inout LPWSTR inOutBuff);
+
 void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last);
 
 /*

@@ -11,6 +11,19 @@ BOOL EndsWith(LPCWSTR str, LPCWSTR suffix)
 	return nStr >= nSuffix && 0 == lstrcmpW(str + nStr - nSuffix, suffix);
 }
 
+void ReplacePrefix(__in LPCWSTR prefixToReplace, __in LPCWSTR prefixToSet, __inout LPWSTR inOutBuff)
+{
+	if (!wcsstr(inOutBuff, prefixToReplace)) 
+	{
+		printf_s("[%s] Prefix %ls not found in %ls", prefixToReplace, inOutBuff);
+		return;
+	}
+	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
+	swprintf_s(pathBuff, L"%ls%ls", prefixToSet, inOutBuff + lstrlenW(prefixToReplace));
+	wmemset(inOutBuff, 0, PATH_BUFF_LEN);
+	lstrcpyW(inOutBuff, pathBuff);
+}
+
 void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last)
 {
 	std::wstring str(path);

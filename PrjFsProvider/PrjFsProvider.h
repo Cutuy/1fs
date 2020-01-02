@@ -78,10 +78,13 @@ private:
 	LPCWSTR srcName;
 	std::vector<PrjFsSessionRuntime*> sessions;
 	
+	// Virtual to physical path mapping, without guaranteeing existence of virtual path
 	std::map<std::wstring, std::wstring, RepathComparator> repaths;
 	
-	// Make sure the stored / accessed order follows FIFO of add time!
+	// Physical to virtual path mapping
 	std::vector<PrjFsMap> remaps; // user ops as well as backtracks
+
+	void AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath);
 public:
 	PrjFsSessionStore() = delete;
 	PrjFsSessionStore(LPCWSTR root);
@@ -94,7 +97,9 @@ public:
 		__out std::vector<LPCWSTR> *inclusions,
 		__out std::vector<LPCWSTR> *exclusions
 	);
-	void AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath);
+
+	// Find a repath that has the longest matching prefix path
+	void GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath);
+
 	void TEST_ClearProjections();
-	void TEST_GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath);
 };

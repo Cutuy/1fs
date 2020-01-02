@@ -36,18 +36,7 @@ void PrjFsSessionStore::TEST_ClearProjections() {
     this->remaps.clear();
 }
 
-void PrjFsSessionStore::TEST_GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath)
-{
-    if (this->repaths.count(virtPath))
-    {
-        lstrcpyW(physPath, this->repaths[std::wstring(virtPath)].data());
-    }
-    else
-    {
-        lstrcpyW(physPath, virtPath);
-    }
-    return;
-}
+
 
 void testStringUtils()
 {
@@ -127,19 +116,74 @@ void testProjectionReplays()
     exclusions.clear();
 
     gSessStore.TEST_ClearProjections();
+    while (1);
 }
 
 void testRepathExpansions()
 {
     // AddRemap(oldAddress, newAddress)
     // repath: given newAddress, get oldAddress
-    printf_s("[%s] Please CHECK RESULTS MANUALLY\n", __func__);
+
+    // Repath only handles path translation
+    // without knowing inclusions/exclusions!
+    printf_s("[%s]\n", __func__);
     gSessStore.AddRemap(LR"(a\g\h)", LR"(a\j)");
     gSessStore.AddRemap(LR"(a\f)", LR"(a\j\p)");
     gSessStore.AddRemap(LR"(a\j)", LR"(a\k)");
     gSessStore.AddRemap(LR"(a\j\c)", LR"(a\g\c)");
-    while (1);
+
+    wchar_t pathBuff[PATH_BUFF_LEN] = {0};
+
+    gSessStore.GetRepath(LR"()", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"()"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+    
+    gSessStore.GetRepath(LR"(a)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(b)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(b)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\b)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\b)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+    
+    gSessStore.GetRepath(LR"(a\g\h)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\g\h)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\k)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\g\h)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\k\x)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\g\h\x)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\j\x)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\g\h\x)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\g)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\g)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\g\c)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\g\h\c)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\g\c\d)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\g\h\c\d)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\g\ccc)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(a\g\ccc)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
     gSessStore.TEST_ClearProjections();
+    while (1);
 }
 
 int main()

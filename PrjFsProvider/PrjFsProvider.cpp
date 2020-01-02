@@ -157,15 +157,7 @@ void PrjFsSessionStore::AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath)
 			{
 				// Replace the prefix (pair.first) part of map.ToPath to pair.second
 				// Then set it to map.ToPath
-				
-				wchar_t pathBuff[PATH_BUFF_LEN];
-				swprintf_s(pathBuff, L"%ls%ls",
-					pair.second.data(), 
-					map.ToPath + lstrlenW(pair.first.data())
-				);
-				wmemset(map.ToPath, 0, PATH_BUFF_LEN);
-				lstrcpyW(map.ToPath, pathBuff);
-
+				ReplacePrefix(pair.first.data(), pair.second.data(), map.ToPath);
 				goto insert_one;
 				// Just to make sure...
 				break;
@@ -176,6 +168,26 @@ insert_one:
 	// Insert, may overwrite existing key
 	this->repaths[std::wstring(map.FromPath)] = std::wstring(map.ToPath);
 	return;
+}
+
+void PrjFsSessionStore::GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath)
+{
+	INT least = 0;
+	lstrcpyW(physPath, virtPath);
+
+	INT less;
+	for (auto it = this->repaths.begin(); it != this->repaths.end(); ++it)
+	{
+		auto remap = *it;
+		if (lpathcmpW(remap.first.data(), virtPath, &less))
+		{
+			if (less <= least)
+			{
+				least = less;
+				ReplacePrefix(remap.first.data(), remap.second.data(), physPath);
+			}
+		}
+	}
 }
 
 /*
@@ -278,8 +290,14 @@ HRESULT MyGetEnumCallback(
 	}
 	*/
 
-	// Apply remaps
+	// Check repath of directory or file
+	//gSessStore.GetRepath(callbackData->FilePathName);
 
+
+	// Apply remaps
+	std::vector<LPCWSTR> inclusions;
+	std::vector<LPCWSTR> exclusions;
+	gSessStore.ReplayProjections(callbackData->FilePathName, &inclusions, &exclusions);
 
 	// Build absolute path
 	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
@@ -526,17 +544,20 @@ HRESULT MyNotificationCallback(
 		}
 
 #ifdef __DIRECTORY_WORKAROUND__
-		if (!isDirectory && IsShadowFile(callbackData->FilePathName))
+		// Note that Windows Shell does not allow folder and file has the same under
+		// under same directry, whereas WinAPI supports it
+		// We follow WinShell, for now...
+		assert(!isDirectory);
+
+		if (IsShadowFile(callbackData->FilePathName))
 		{
-			// Convert "/someDir_MOVE" to "/someDir/*"
-			// The special workingaround on acting on the remap should not be done here
+			// Convert "/someDir_MOVE" to "/someDir"
+			// The special workaround on acting on the remap should not be done here
 			wchar_t srcBuff[PATH_BUFF_LEN] = { 0 };
 			wmemcpy(srcBuff, callbackData->FilePathName, lstrlenW(callbackData->FilePathName) - lstrlenW(SHADOW_FILE_SUFFIX));
-			lstrcatW(srcBuff, ENTER_DIRECTORY_PATH);
 			
 			wchar_t dstBuff[PATH_BUFF_LEN] = { 0 };
 			wmemcpy(dstBuff, destinationFileName, lstrlenW(destinationFileName) - lstrlenW(SHADOW_FILE_SUFFIX));
-			lstrcatW(dstBuff, ENTER_DIRECTORY_PATH);
 			
 			gSessStore.AddRemap(srcBuff, dstBuff);
 			printf_s("[%s] Added remap %ls %ls\n", __func__, srcBuff, dstBuff);
