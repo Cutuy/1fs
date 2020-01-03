@@ -11,8 +11,8 @@
 
 #pragma comment(lib, "ProjectedFSLib.lib")
 
-#define SrcName LR"(B:\content)"
-#define DstName LR"(A:\root)"
+#define SrcName LR"(B:\src)"
+#define DstName LR"(A:\dst)"
 
 PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT instanceHandle;
 PRJ_CALLBACKS callbackTable2 = {
@@ -21,7 +21,7 @@ PRJ_CALLBACKS callbackTable2 = {
     MyGetEnumCallback,
     MyGetPlaceholderCallback,
     MyGetFileDataCallback,
-    MyQueryFileNameCallback,
+    nullptr, //MyQueryFileNameCallback,
     MyNotificationCallback,
     nullptr
 };
@@ -268,7 +268,7 @@ int main()
     //testProjectionReplays();
     //testRepathExpansions();
 
-    applyTestRepaths();
+    //applyTestRepaths();
 
     GUID instanceId;
     hr = CoCreateGuid(&instanceId);

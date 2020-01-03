@@ -12,7 +12,7 @@ PRJ_END_DIRECTORY_ENUMERATION_CB MyEndEnumCallback;
 PRJ_GET_DIRECTORY_ENUMERATION_CB MyGetEnumCallback;
 PRJ_GET_PLACEHOLDER_INFO_CB MyGetPlaceholderCallback;
 PRJ_GET_FILE_DATA_CB MyGetFileDataCallback;
-PRJ_QUERY_FILE_NAME_CB MyQueryFileNameCallback;
+//PRJ_QUERY_FILE_NAME_CB MyQueryFileNameCallback;
 PRJ_NOTIFICATION_CB MyNotificationCallback;
 
 struct PrjFsMap
@@ -91,6 +91,8 @@ public:
 	LPPrjFsSessionRuntime GetSession(LPCGUID lpcGuid);
 	void FreeSession(LPCGUID lpcGuid);
 	int AddRemap(PCWSTR from, PCWSTR to);
+
+	BOOL IsVirtPathValid(LPCWSTR virtPath);
 
 	// Find path component at depth of 1 done without accessing the FS on disk
 	void ReplayProjections(
