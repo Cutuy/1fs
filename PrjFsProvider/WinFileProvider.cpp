@@ -10,13 +10,24 @@ HRESULT winFileScan
 {
 	UINT32 fileAttr = GetFileAttributes(lpcPhysAbs);
 #ifdef __DIRECTORY_WORKAROUND__
+	// Shadow file is a pure virtual file that does not exist in ntfs
 	if (IsShadowFile(lpcPhysAbs))
-	{
-		printf_s("[%s] found shadow file %ls\n", __func__, lpcPhysAbs);
+	{		
+		// phys file non-exist -> fil not found
+		// virt path not valid (even if phys file exist) -> use IsVirtPathValid to protect in caller's code
+		wchar_t unsuffixPhysAbs[PATH_BUFF_LEN] = { 0 };
+		wmemcpy(unsuffixPhysAbs, lpcPhysAbs, lstrlenW(lpcPhysAbs) - lstrlenW(SHADOW_FILE_SUFFIX));
+		fileAttr = GetFileAttributes(unsuffixPhysAbs);
+		if (INVALID_FILE_ATTRIBUTES == fileAttr || !(FILE_ATTRIBUTE_DIRECTORY & fileAttr))
+		{
+			printf_s("[%s] file not found for %ls\n", __func__, unsuffixPhysAbs);
+			return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+		}
+		
+		// Now treat the shadow file as a normal file
 		fileAttr = FILE_ATTRIBUTE_NORMAL;
 	}
 #endif
-
 	if (INVALID_FILE_ATTRIBUTES == fileAttr)
 	{
 		printf_s("[%s] file not found for %ls\n", __func__, lpcPhysAbs);
@@ -40,10 +51,11 @@ HRESULT winFileScan
 	LARGE_INTEGER fileSize;
 	if (hFile == INVALID_HANDLE_VALUE || !GetFileSizeEx(hFile, &fileSize))
 	{
-		printf_s("[%s] file size failed to get\n", __func__);
 		fileSize.LowPart = 0;
 		fileSize.HighPart = 0;
 	}
+	FILETIME ft1 = {}, ft2 = {}, ft3 = {};
+	GetFileTime(hFile, &ft1, &ft2, &ft3);
 	if (hFile != INVALID_HANDLE_VALUE)
 	{
 		CloseHandle(hFile);
@@ -52,6 +64,16 @@ HRESULT winFileScan
 	lpFile->IsDirectory = (fileAttr & FILE_ATTRIBUTE_DIRECTORY) != 0;
 	lpFile->FileAttributes = fileAttr;
 	lpFile->FileSize = fileSize.QuadPart;
+	lpFile->CreationTime.HighPart = ft1.dwHighDateTime;
+	lpFile->CreationTime.LowPart = ft1.dwLowDateTime;
+	lpFile->LastAccessTime.HighPart = ft2.dwHighDateTime;
+	lpFile->LastAccessTime.LowPart = ft2.dwLowDateTime;
+	lpFile->ChangeTime.HighPart = ft3.dwHighDateTime;
+	lpFile->ChangeTime.LowPart = ft3.dwLowDateTime;
+	lpFile->LastWriteTime.HighPart = ft3.dwHighDateTime;
+	lpFile->LastWriteTime.LowPart = ft3.dwLowDateTime;
+
+	return S_OK;
 }
 
 HRESULT winFileDirScan
@@ -85,7 +107,15 @@ HRESULT winFileDirScan
 			fileBasicInfo.IsDirectory = (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 			fileBasicInfo.FileSize = (((INT64)ffd.nFileSizeHigh) << 32) | ffd.nFileSizeLow;
 			fileBasicInfo.FileAttributes = ffd.dwFileAttributes;
-			
+			fileBasicInfo.CreationTime.HighPart = ffd.ftCreationTime.dwHighDateTime;
+			fileBasicInfo.CreationTime.LowPart = ffd.ftCreationTime.dwLowDateTime;
+			fileBasicInfo.LastAccessTime.HighPart = ffd.ftLastAccessTime.dwHighDateTime;
+			fileBasicInfo.LastAccessTime.LowPart = ffd.ftLastAccessTime.dwLowDateTime;
+			fileBasicInfo.ChangeTime.HighPart = ffd.ftLastWriteTime.dwHighDateTime;
+			fileBasicInfo.ChangeTime.LowPart = ffd.ftLastWriteTime.dwLowDateTime;
+			fileBasicInfo.LastWriteTime.HighPart = ffd.ftLastWriteTime.dwHighDateTime;
+			fileBasicInfo.LastWriteTime.LowPart = ffd.ftLastWriteTime.dwLowDateTime;
+
 			if (lpFiles->count(ffd.cFileName))
 			{
 				printf_s("[%s] file name conflict %ls", __func__, ffd.cFileName);
@@ -106,6 +136,15 @@ HRESULT winFileDirScan
 				fileBasicInfo.IsDirectory = false;
 				fileBasicInfo.FileSize = 0;
 				fileBasicInfo.FileAttributes = FILE_ATTRIBUTE_NORMAL;
+				fileBasicInfo.CreationTime.HighPart = ffd.ftCreationTime.dwHighDateTime;
+				fileBasicInfo.CreationTime.LowPart = ffd.ftCreationTime.dwLowDateTime;
+				fileBasicInfo.LastAccessTime.HighPart = ffd.ftLastAccessTime.dwHighDateTime;
+				fileBasicInfo.LastAccessTime.LowPart = ffd.ftLastAccessTime.dwLowDateTime;
+				fileBasicInfo.ChangeTime.HighPart = ffd.ftLastWriteTime.dwHighDateTime;
+				fileBasicInfo.ChangeTime.LowPart = ffd.ftLastWriteTime.dwLowDateTime;
+				fileBasicInfo.LastWriteTime.HighPart = ffd.ftLastWriteTime.dwHighDateTime;
+				fileBasicInfo.LastWriteTime.LowPart = ffd.ftLastWriteTime.dwLowDateTime;
+
 
 				if (lpFiles->count(pathBuff))
 				{

@@ -48,6 +48,32 @@ void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last)
 	return;
 }
 
+void GetPathFirstComponent(__in LPCWSTR path, __out LPWSTR first)
+{
+	std::wstring str(path);
+	int i = (int)str.find('\\');
+	if (i < 0)
+	{
+		lstrcpyW(first, path);
+	}
+	else
+	{
+		wmemcpy(first, path, i);
+	}
+}
+
+void GetPathParent(__in LPCWSTR path, __out LPWSTR parent)
+{
+	GetPathLastComponent(path, parent);
+	if (0 != lstrlenW(path) && 0 != lstrcmpW(path, parent))
+	{
+		std::wstring str(path);
+		int i = (int)str.rfind('\\');
+		wmemset(parent, 0, PATH_BUFF_LEN);
+		wmemcpy(parent, path, i);
+	}
+}
+
 BOOL lpathcmpW(__in LPCWSTR lpcSub, __in LPCWSTR lpcObj, __out INT* pLess)
 {
 	// No path shall contain "/*" or ends with "/"

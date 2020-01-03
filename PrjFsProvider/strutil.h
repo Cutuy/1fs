@@ -14,7 +14,8 @@ BOOL IsShadowFile(LPCWSTR fileName);
 void ReplacePrefix(__in LPCWSTR prefixToReplace, __in LPCWSTR prefixToSet, __inout LPWSTR inOutBuff);
 
 void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last);
-
+void GetPathFirstComponent(__in LPCWSTR path, __out LPWSTR first);
+void GetPathParent(__in LPCWSTR path, __out LPWSTR parent);
 /*
 	Compare the path depth difference
 	return false if paths not comparable (partial order cannot established)

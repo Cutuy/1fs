@@ -20,7 +20,7 @@ Effective knowledge finding > Personal organization vs public view of directory
 
 <del>[vview-o2-kr2 🟢] The tracking info is persisted then restored (disk<->mem)</del>
 
-[vview-o2-kr2a ✔] In-mem projections for directories to reflect on fs
+[vview-o2-kr2a ✔] Correctness of return values of in-mem projections for directories (ignoring ghost cache issues)
 
 [vview-o2-kr2b 🟢] Command-line & WinShell file renames to reflect on fs
 
@@ -58,3 +58,10 @@ Yet it seems I finished [vview-o2-kr1] :)
 - After vview, should investigate how to "sync back" changes; bypass dirty state or allow it?
 - Looks like file moves must be handled with explicit PrjFileDelete, otherwise the fs still caches the old placeholder... (ghost cache) Checked in code & it should be fine
 - [Bug fixed] Self cancelling remaps (a->b, then b->a) seems to make 1fs not responding to the newer change
+
+## Next (1/3)
+Math proof of correctness?
+
+## Notes (1/3)
+- Tired day, mostly hunting for bugs
+- The "ghost cache" is still there with different GUID!!
