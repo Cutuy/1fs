@@ -12,7 +12,7 @@
 #pragma comment(lib, "ProjectedFSLib.lib")
 
 #define SrcName LR"(B:\src)"
-#define DstName LR"(A:\dst)"
+#define DstName LR"(A:\dst13)"
 
 PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT instanceHandle;
 PRJ_CALLBACKS callbackTable2 = {
@@ -127,7 +127,7 @@ void testProjectionReplays()
     CLEAR_VIEW;
     VIEW_AT(LR"(a\g)");
     assert(inclusions.size() == 0);
-    assert(exclusions.at(0).data(), LR"(h)");
+    assert(0 == lstrcmpW(exclusions.at(0).data(), LR"(h)"));
 #pragma endregion
 #pragma region Case 2
     // A bug found while in dev - the TIME of rule taking effect matters!
@@ -140,8 +140,11 @@ void testProjectionReplays()
     // view at f2
     CLEAR_VIEW;
     VIEW_AT(LR"(f2)");
-    assert(inclusions.at(0).data(), LR"(m)");
-    assert(exclusions.at(0).data(), LR"(t)");
+    assert(0 == lstrcmpW(inclusions.at(0).data(), LR"(q)"));
+    assert(0 == lstrcmpW(exclusions.at(0).data(), LR"(p)"));
+    assert(!gSessStore.IsVirtPathValid(LR"(f1)"));
+    assert(!gSessStore.IsVirtPathValid(LR"(f1\p)"));
+    assert(!gSessStore.IsVirtPathValid(LR"(f1\q)"));
 #pragma endregion
 #pragma region Case 3
     // Another bug... self cancelling rules
@@ -155,7 +158,6 @@ void testProjectionReplays()
     CLEAR_VIEW;
     VIEW_AT(LR"()");
     assert(inclusions.size() == 0);
-    assert(exclusions.size() == 0);
 #pragma endregion
     CLEAR_CASE;
 }
@@ -198,6 +200,10 @@ void testUltimateBoss()
     assert(gSessStore.IsVirtPathValid(LR"(a\b)"));
     assert(gSessStore.IsVirtPathValid(LR"(a\b\c)"));
     assert(gSessStore.IsVirtPathValid(LR"(a\b\c\d)"));
+
+    gSessStore.AddRemap(LR"(a\b)", LR"(b)");
+    assert(gSessStore.IsVirtPathValid(LR"(b)"));
+    assert(!gSessStore.IsVirtPathValid(LR"(a\b)"));
 
     CLEAR_CASE;
 }
@@ -279,24 +285,31 @@ void testRepathExpansions()
 
 void applyTestRepaths()
 {
-    gSessStore.AddRemap(LR"(f1-visa-renewal\DS160.pdf)", LR"(DS160.pdf)");
-    gSessStore.AddRemap(LR"(f1-visa-renewal)", LR"(f2-visa-renewal)");
-    gSessStore.AddRemap(LR"(f2-visa-renewal\test.txt)", LR"(test.txt)");
+    /*
+    a\a.c\a.c.u     -> b\a.c.u
+    b\b.k           -> a\a.c\b.k
+    a\a.c\b.k\b.k.g -> b.k.g
+    a               -> b.k.g\a
+
+    b\a.c.u         -> a.c.u
+    a.c.u           -> b\a.c.u
+    b               -> b.k.g\b
+    */
+    gSessStore.AddRemap(LR"(a\a.c\a.c.u)", LR"(b\a.c.u)");
+    gSessStore.AddRemap(LR"(b\b.k_MOVE)", LR"(a\a.c\b.k_MOVE)");
+    gSessStore.AddRemap(LR"(b\b.k)", LR"(a\a.c\b.k)");
+    gSessStore.AddRemap(LR"(a\a.c\b.k\b.k.g_MOVE)", LR"(b.k.g_MOVE)");
+    gSessStore.AddRemap(LR"(a\a.c\b.k\b.k.g)", LR"(b.k.g)");
+    gSessStore.AddRemap(LR"(a_MOVE)", LR"(b.k.g\a_MOVE)");
+    gSessStore.AddRemap(LR"(a)", LR"(b.k.g\a)");
+    /*
+    gSessStore.AddRemap(LR"(b\a.c.u)", LR"(a.c.u)");
+    gSessStore.AddRemap(LR"(a.c.u)", LR"(b\a.c.u)");
+    gSessStore.AddRemap(LR"(b_MOVE)", LR"(b.k.g\b_MOVE)");
+    gSessStore.AddRemap(LR"(b)", LR"(b.k.g\b)");
+    */
 }
 
-HRESULT applyTestCleanup(PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT hContext)
-{
-    // Find entries in root
-    PRJ_UPDATE_FAILURE_CAUSES cause;
-    HRESULT hr;
-    DWORD flags;
-    flags = PRJ_UPDATE_ALLOW_DIRTY_DATA
-        | PRJ_UPDATE_ALLOW_DIRTY_METADATA
-        | PRJ_UPDATE_ALLOW_READ_ONLY
-        | PRJ_UPDATE_ALLOW_TOMBSTONE;
-    hr = PrjDeleteFile(hContext, LR"(\*)", (PRJ_UPDATE_TYPES)flags, &cause);
-    return hr;
-}
 
 int main()
 {
@@ -304,11 +317,11 @@ int main()
     HRESULT hr;
 
     //testStringUtils();
-    //testProjectionReplays();
-    //testRepathExpansions();
+    testProjectionReplays();
+    testRepathExpansions();
     testUltimateBoss();
 
-    //applyTestRepaths();
+    applyTestRepaths();
 
     GUID instanceId;
     hr = CoCreateGuid(&instanceId);

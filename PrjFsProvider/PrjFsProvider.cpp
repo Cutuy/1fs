@@ -65,14 +65,11 @@ int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 {
 	// TODO validate the parent of arg_to must exist 
 	// Let's forget the loops & priorities for remaps now; assuming they do not have conflict of scopes at all
-	wchar_t physFrom[PATH_BUFF_LEN] = { 0 };
-	this->GetRepath(from, physFrom);
-	wchar_t physTo[PATH_BUFF_LEN] = { 0 };
-	this->GetRepath(to, physTo);
+
 	
 	// Get the physical path of remap before adding it
 	// Any duplications or single-from_multi-to will be handled by GetRepath
-	PrjFsMap map(physFrom, physTo);
+	PrjFsMap map(from, to);
 
 	this->remaps.erase(
 		std::remove_if(
@@ -92,12 +89,12 @@ int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 		// by add a special repath: (from, NULL)
 		// Currently invalid virtual path can still access the files
 		// under the translated (i.e. no match) phys path on disk fs
-	}
 
-	// Take effect of the new repath only after the remap has been added
-	// otherwise the current remap cannot use repath translation (from always equals to to)
-	this->AddRepath(to, from); // TODO: or to -> physFrom?
-	
+		// Take effect of the new repath only after the remap has been added
+		// otherwise the current remap cannot use repath translation (from always equals to to)
+		this->AddRepath(to, from); // TODO: or to -> physFrom?
+
+	}
 	return 0;
 }
 
@@ -107,54 +104,57 @@ void PrjFsSessionStore::ReplayProjections(
 	__out std::vector<std::wstring>& virtExclusions
 )
 {
-	wchar_t physDir[PATH_BUFF_LEN] = { 0 };
-	gSessStore.GetRepath(virtDir, physDir);
+	//wchar_t physDir[PATH_BUFF_LEN] = { 0 };
+	//gSessStore.GetRepath(virtDir, physDir);
 
 	// File moves are evaluated always against physical path
-	for (auto it = this->remaps.begin(); it != this->remaps.end(); ++it)
+	wchar_t activeDir[PATH_BUFF_LEN] = { 0 };
+	lstrcpyW(activeDir, virtDir);
+
+	std::vector<PrjFsMap>::reverse_iterator it = this->remaps.rbegin();
+	while (it != this->remaps.rend())
 	{
 		BOOL hr;
-		
 		int less;
-
-if (hr = lpathcmpW(it->ToPath, physDir, &less))
-{
-	if (less <= 0)
-	{
-		// nop
-	}
-	else if (1 == less)
-	{
-		wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
-		GetPathLastComponent(it->ToPath, pathBuff);
-
-		std::vector<std::wstring>::iterator it_f;
-		if (virtExclusions.end() != (it_f = std::find(virtExclusions.begin(), virtExclusions.end(), pathBuff)))
+		if (hr = lpathcmpW(it->ToPath, activeDir, &less))
 		{
-			virtExclusions.erase(it_f);
-		}
-		virtInclusions.push_back(pathBuff);
-	}
-}
-// no else!
-if (hr = lpathcmpW(it->FromPath, physDir, &less))
-{
-	if (1 == less)
-	{
-		wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
-		GetPathLastComponent(it->FromPath, pathBuff);
+			if (0 == less)
+			{
+				wmemset(activeDir, 0, PATH_BUFF_LEN);
+				lstrcpyW(activeDir, it->FromPath);
+				goto next_item;
+			}
+			else if (1 == less)
+			{
+				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
+				GetPathLastComponent(it->ToPath, pathBuff);
 
-		std::vector<std::wstring>::iterator it_f;
-		if (virtInclusions.end() != (it_f = std::find(virtInclusions.begin(), virtInclusions.end(), pathBuff)))
-		{
-			virtInclusions.erase(it_f);
+				std::vector<std::wstring>::iterator it_f;
+				if (virtExclusions.end() == (it_f = std::find(virtExclusions.begin(), virtExclusions.end(), pathBuff)))
+				{
+					virtInclusions.push_back(pathBuff);
+				}
+				
+			}
 		}
-		virtExclusions.push_back(pathBuff);
-		// ignore (since the repath will be added by rule #1 or #2 at some dir)
+		// no else!
+		if (hr = lpathcmpW(it->FromPath, activeDir, &less))
+		{
+			if (1 == less)
+			{
+				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
+				GetPathLastComponent(it->FromPath, pathBuff);
+
+				std::vector<std::wstring>::iterator it_f;
+				if (virtInclusions.end() == (it_f = std::find(virtInclusions.begin(), virtInclusions.end(), pathBuff)))
+				{
+					virtExclusions.push_back(pathBuff);
+				}
+			}
+		}
+next_item:
+		++it;
 	}
-}
-	}
-	return;
 }
 
 void PrjFsSessionStore::AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath)
@@ -229,8 +229,11 @@ void PrjFsSessionStore::AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath)
 	{
 		printf_s("[%s] Updating existing repath %ls", __func__, virtPath);
 	}
-	this->repaths[virtPath] = std::wstring(physPath);
-
+	if (0 != lstrcmpW(virtPath, physPath))
+	{
+		this->repaths[virtPath] = std::wstring(physPath);
+	}
+	
 	// Validate result
 	assert(this->IsVirtPathValid(virtPath));
 }
@@ -405,7 +408,7 @@ HRESULT MyGetEnumCallback(
 	}
 	printf_s("[%s] Found %d entries from ntfs %ls\n", 
 		__func__, (int)files.size(), physDirAbsEntered);
-
+	
 
 	// Find files by 1fs
 	std::vector<std::wstring> exclusions;
@@ -414,8 +417,6 @@ HRESULT MyGetEnumCallback(
 
 	// Take: (ntfs (already filtered by searchExp) \cup (inclusions filtered)) \diff (exclusions)
 	// The searchExp filter thus can be inserted into inclusions
-
-	// TODO Apply dir workaround to inclusions, exclusions
 
 	for (auto it = inclusions.begin(); it != inclusions.end(); ++it)
 	{
@@ -459,16 +460,6 @@ HRESULT MyGetEnumCallback(
 			printf_s("[%s] inclusion clash with ntfs scan at %ls\n", __func__, physFileAbs);
 		}
 		files[entry] = fbi;
-
-#ifdef __DIRECTORY_WORKAROUND__
-		if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-		{
-			wchar_t virtFileMOVE[PATH_BUFF_LEN] = { 0 };
-			swprintf_s(virtFileMOVE, L"%ls%ls", entry, SHADOW_FILE_SUFFIX);
-			fbi.IsDirectory = false;
-			files[virtFileMOVE] = fbi;
-		}
-#endif
 	}
 	for (auto it = exclusions.begin(); it != exclusions.end(); ++it)
 	{
@@ -478,40 +469,11 @@ HRESULT MyGetEnumCallback(
 		if (files.count(entry))
 		{
 			files.erase(entry);
-#ifdef __DIRECTORY_WORKAROUND__
-			// also remove the "_MOVE" file
-			wchar_t virtFileMOVE[PATH_BUFF_LEN] = { 0 };
-			swprintf_s(virtFileMOVE, L"%ls%ls", entry, SHADOW_FILE_SUFFIX);
-			if (files.count(virtFileMOVE))
-			{
-				files.erase(virtFileMOVE);
-			}
-#endif
 		}
 		else
 		{
 			printf_s("[%s] exclusion declared but entry not found %ls\n", __func__, (*it).data());
 		}
-		
-		/*
-		// TODO Check: Exclude item from fs cache for any subsequent call
-		wchar_t virtFile[PATH_BUFF_LEN] = { 0 };
-		swprintf_s(virtFile, L"%ls%ls%ls",
-			virtDir, lstrlenW(virtDir) ? DIRECTORY_SEP_PATH : L"", entry);
-		
-		PRJ_UPDATE_FAILURE_CAUSES causes;
-		HRESULT hr;
-		hr = PrjDeleteFile(
-			callbackData->NamespaceVirtualizationContext,
-			virtFile,
-			PRJ_UPDATE_ALLOW_DIRTY_METADATA | PRJ_UPDATE_ALLOW_DIRTY_DATA | PRJ_UPDATE_ALLOW_TOMBSTONE,
-			&causes
-		);
-		if (FAILED(hr))
-		{
-			printf_s("[%s] deletion from exclusion of %ls failed due to 0x%08x\n", __func__, virtFile, causes);
-		}
-		*/
 	}
 
 	std::map<std::wstring, PRJ_FILE_BASIC_INFO>::iterator it = files.begin();
@@ -526,6 +488,19 @@ HRESULT MyGetEnumCallback(
 				printf_s("[%s] PrjFillDirEntryBuffer failed for %ls due to 0x%08d\n", __func__, pair.first.data(), hr);
 			}
 		});
+	}
+
+	if (!isSingleEntry)
+	{
+		printf_s("\n[%s] (%ls, %ls), found %d entries\n",
+			__func__,
+			callbackData->FilePathName, 
+			searchExpression,
+			(int)files.size());
+		std::for_each(files.begin(), files.end(), [](std::pair<const std::wstring, PRJ_FILE_BASIC_INFO>& pair) {
+			printf_s("%ls\n", pair.first.data());
+		});
+		printf_s("\n");
 	}
 
 	return S_OK;
@@ -681,25 +656,10 @@ HRESULT MyNotificationCallback(
 		}
 
 		PRJ_UPDATE_FAILURE_CAUSES causes;
-		HRESULT hr;
 
 		gSessStore.AddRemap(callbackData->FilePathName, destinationFileName);
 		printf_s("[%s] Added remap %ls %ls\n", __func__, callbackData->FilePathName, destinationFileName);
 
-		hr = PrjDeleteFile(
-			callbackData->NamespaceVirtualizationContext,
-			callbackData->FilePathName,
-			PRJ_UPDATE_ALLOW_DIRTY_METADATA | PRJ_UPDATE_ALLOW_DIRTY_DATA | PRJ_UPDATE_ALLOW_TOMBSTONE,
-			&causes
-		);
-		if (FAILED(hr))
-		{
-			printf_s("[%s] Deletion failed %ls\n", __func__, callbackData->FilePathName);
-		}
-		else
-		{
-			printf_s("[%s] Deleted projected file %ls\n", __func__, callbackData->FilePathName);
-		}
 
 #ifdef __DIRECTORY_WORKAROUND__
 		// Note that Windows Shell does not allow folder and file has the same under
@@ -720,20 +680,6 @@ HRESULT MyNotificationCallback(
 			gSessStore.AddRemap(srcBuff, dstBuff);
 			printf_s("[%s] Added remap %ls %ls\n", __func__, srcBuff, dstBuff);
 
-			hr = PrjDeleteFile(
-				callbackData->NamespaceVirtualizationContext,
-				srcBuff,
-				PRJ_UPDATE_ALLOW_DIRTY_METADATA | PRJ_UPDATE_ALLOW_DIRTY_DATA | PRJ_UPDATE_ALLOW_TOMBSTONE,
-				&causes
-			);
-			if (FAILED(hr))
-			{
-				printf_s("[%s] Deletion failed %ls\n", __func__, srcBuff);
-			}
-			else
-			{
-				printf_s("[%s] Deleted projected file %ls\n", __func__, srcBuff);
-			}
 		}
 #endif
 	}
