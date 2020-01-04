@@ -96,37 +96,37 @@ void testProjectionReplays()
     gSessStore.AddRemap(LR"(a\f)", LR"(a\j\p)");
 
     // view at a
-    gSessStore.ReplayProjections(LR"(a)", &inclusions, &exclusions);
+    gSessStore.ReplayProjections(LR"(a)", inclusions, exclusions);
     assert(0 == lstrcmpW(inclusions.at(0).data(), LR"(j)"));
     assert(0 == lstrcmpW(exclusions.at(0).data(), LR"(f)"));
     inclusions.clear();
     exclusions.clear();
     // view at j
-    gSessStore.ReplayProjections(LR"(a\j)", &inclusions, &exclusions);
+    gSessStore.ReplayProjections(LR"(a\j)", inclusions, exclusions);
     assert(0 == lstrcmpW(inclusions.at(0).data(), LR"(p)"));
     assert(exclusions.size() == 0);
     inclusions.clear();
     exclusions.clear();
     // view at p
-    gSessStore.ReplayProjections(LR"(a\j\p)", &inclusions, &exclusions);
+    gSessStore.ReplayProjections(LR"(a\j\p)", inclusions, exclusions);
     assert(inclusions.size() == 0);
     assert(exclusions.size() == 0);
     inclusions.clear();
     exclusions.clear();
     // view at root
-    gSessStore.ReplayProjections(LR"()", &inclusions, &exclusions);
+    gSessStore.ReplayProjections(LR"()", inclusions, exclusions);
     assert(inclusions.size() == 0);
     assert(exclusions.size() == 0);
     inclusions.clear();
     exclusions.clear();
     // view at arbitrary invalid paths
-    gSessStore.ReplayProjections(LR"(a\m)", &inclusions, &exclusions);
+    gSessStore.ReplayProjections(LR"(a\m)", inclusions, exclusions);
     assert(inclusions.size() == 0);
     assert(exclusions.size() == 0);
     inclusions.clear();
     exclusions.clear();
     // view at g
-    gSessStore.ReplayProjections(LR"(a\g)", &inclusions, &exclusions);
+    gSessStore.ReplayProjections(LR"(a\g)", inclusions, exclusions);
     assert(inclusions.size() == 0);
     assert(exclusions.at(0).data(), LR"(h)");
     inclusions.clear();
@@ -141,7 +141,7 @@ void testProjectionReplays()
     gSessStore.AddRemap(LR"(f1)", LR"(f2)");
 
     // view at f2
-    gSessStore.ReplayProjections(LR"(f2)", &inclusions, &exclusions);
+    gSessStore.ReplayProjections(LR"(f2)", inclusions, exclusions);
     assert(inclusions.at(0).data(), LR"(m)");
     assert(exclusions.at(0).data(), LR"(t)");
     inclusions.clear();
@@ -156,7 +156,7 @@ void testProjectionReplays()
     gSessStore.AddRemap(LR"(p)", LR"(f0\p)");
     
     // view at root
-    gSessStore.ReplayProjections(LR"()", &inclusions, &exclusions);
+    gSessStore.ReplayProjections(LR"()", inclusions, exclusions);
     assert(inclusions.size() == 0);
     assert(exclusions.size() == 0);
     while (1);

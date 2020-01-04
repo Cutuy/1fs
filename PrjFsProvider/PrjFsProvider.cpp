@@ -15,11 +15,6 @@
 
 extern PrjFsSessionStore gSessStore;
 
-
-
-
-
-
 PrjFsSessionStore::PrjFsSessionStore(LPCWSTR root): srcName(root)
 {
 }
@@ -107,8 +102,8 @@ int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 
 void PrjFsSessionStore::ReplayProjections(
 	__in PCWSTR virtDir, 
-	__out std::vector<std::wstring> *virtInclusions,
-	__out std::vector<std::wstring> *virtExclusions
+	__out std::vector<std::wstring>& virtInclusions,
+	__out std::vector<std::wstring>& virtExclusions
 )
 {
 	wchar_t physDir[PATH_BUFF_LEN] = { 0 };
@@ -117,12 +112,11 @@ void PrjFsSessionStore::ReplayProjections(
 	// File moves are evaluated always against physical path
 	for (auto it = this->remaps.begin(); it != this->remaps.end(); ++it)
 	{
-		PrjFsMap proj = *it;
 		BOOL hr;
 		
 		int less;
 
-		if (hr = lpathcmpW(proj.ToPath, physDir, &less))
+		if (hr = lpathcmpW(it->ToPath, physDir, &less))
 		{
 			if (less <= 0)
 			{
@@ -131,30 +125,30 @@ void PrjFsSessionStore::ReplayProjections(
 			else if (1 == less)
 			{
 				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
-				GetPathLastComponent(proj.ToPath, pathBuff);
+				GetPathLastComponent(it->ToPath, pathBuff);
 
 				std::vector<std::wstring>::iterator it_f;
-				if (virtExclusions->end() != (it_f = std::find(virtExclusions->begin(), virtExclusions->end(), pathBuff)))
+				if (virtExclusions.end() != (it_f = std::find(virtExclusions.begin(), virtExclusions.end(), pathBuff)))
 				{
-					virtExclusions->erase(it_f);
+					virtExclusions.erase(it_f);
 				}
-				virtInclusions->push_back(pathBuff);
+				virtInclusions.push_back(pathBuff);
 			}
 		}
 		// no else!
-		if (hr = lpathcmpW(proj.FromPath, physDir, &less))
+		if (hr = lpathcmpW(it->FromPath, physDir, &less))
 		{
 			if (1 == less)
 			{
 				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
-				GetPathLastComponent(proj.FromPath, pathBuff);
+				GetPathLastComponent(it->FromPath, pathBuff);
 
 				std::vector<std::wstring>::iterator it_f;
-				if (virtInclusions->end() != (it_f = std::find(virtInclusions->begin(), virtInclusions->end(), pathBuff)))
+				if (virtInclusions.end() != (it_f = std::find(virtInclusions.begin(), virtInclusions.end(), pathBuff)))
 				{
-					virtInclusions->erase(it_f);
+					virtInclusions.erase(it_f);
 				}
-				virtExclusions->push_back(pathBuff);
+				virtExclusions.push_back(pathBuff);
 				// ignore (since the repath will be added by rule #1 or #2 at some dir)
 			}
 		}
@@ -259,7 +253,7 @@ BOOL PrjFsSessionStore::IsVirtPathValid(LPCWSTR virtPath)
 
 	while (lstrlenW(remainPath))
 	{
-		this->ReplayProjections(testPath, &inclusions, &exclusions);
+		this->ReplayProjections(testPath, inclusions, exclusions);
 		GetPathFirstComponent(remainPath, firstComp);
 
 		if (exclusions.end() !=
@@ -286,43 +280,6 @@ BOOL PrjFsSessionStore::IsVirtPathValid(LPCWSTR virtPath)
 	}
 	return true;
 }
-/*
-	Search for includes and excludes for directory at depth 1 of directory
-
-int PrjFsSessionStore::FilterRemaps(__in PCWSTR directory, __out std::vector<PCWSTR>* pIncludePaths, __out std::vector<PCWSTR>* pExcludePaths)
-{
-	auto pIncludePaths = new std::vector<PCWSTR>();
-	auto pExcludePaths = new std::vector<PCWSTR>();
-
-	// Requires directory to contain "/*"
-	PCWCHAR pch = wcsstr(directory, ENTER_DIRECTORY_PATH);
-	BOOL isDirectoryEntered = (nullptr != pch);
-	if (!isDirectoryEntered)
-	{
-
-	}
-	else
-	{
-		for (auto it = this->remaps.begin(); it != this->remaps.end(); ++it)
-		{
-			PrjFsMap map = *it;
-			// when "root/b/*" is accessed...
-			// Include when dir itself is projected from elsewhere
-			if (lstrcmpW(directory, map.ToPath))
-			{
-				pIncludePaths->push_back(map.FromPath);
-			}
-			// Exclude (root/b/a/* or root/b/c) from directory
-			if (PrjFileNameMatch(directory, map.FromPath)
-				&& IsAtRootDirectory(directory, map.FromPath))// TODO remap can be "copy" or "cut"
-			{
-				pExcludePaths->push_back(map.FromPath);
-			}
-		}
-	}
-
-}
-*/
 
 LPCWSTR PrjFsSessionStore::GetRoot()
 {
@@ -420,13 +377,13 @@ HRESULT MyGetEnumCallback(
 		return hr;
 	}
 	printf_s("[%s] Found %d entries from ntfs %ls\n", 
-		__func__, files.size(), physDirAbsEntered);
+		__func__, (int)files.size(), physDirAbsEntered);
 
 
 	// Find files by 1fs
 	std::vector<std::wstring> exclusions;
 	std::vector<std::wstring> inclusions;
-	gSessStore.ReplayProjections(virtDir, &inclusions, &exclusions);
+	gSessStore.ReplayProjections(virtDir, inclusions, exclusions);
 
 	// Take: (ntfs (already filtered by searchExp) \cup (inclusions filtered)) \diff (exclusions)
 	// The searchExp filter thus can be inserted into inclusions

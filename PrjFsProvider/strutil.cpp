@@ -34,7 +34,7 @@ void ReplacePrefix(__in LPCWSTR prefixToReplace, __in LPCWSTR prefixToSet, __ino
 void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last)
 {
 	std::wstring str(path);
-	int i = (int)str.rfind('\\');
+	size_t i = str.rfind('\\');
 	if (i < 0)
 	{
 		lstrcpyW(last, str.substr(0).data());
@@ -42,7 +42,7 @@ void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last)
 	else
 	{
 		// skipping the backslash
-		lstrcpyW(last, str.substr(i + 1).data());
+		lstrcpyW(last, str.substr(i + 1ULL).data());
 	}
 	
 	return;
@@ -51,7 +51,7 @@ void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last)
 void GetPathFirstComponent(__in LPCWSTR path, __out LPWSTR first)
 {
 	std::wstring str(path);
-	int i = (int)str.find('\\');
+	size_t i = str.find('\\');
 	if (i < 0)
 	{
 		lstrcpyW(first, path);
@@ -68,7 +68,7 @@ void GetPathParent(__in LPCWSTR path, __out LPWSTR parent)
 	if (0 != lstrlenW(path) && 0 != lstrcmpW(path, parent))
 	{
 		std::wstring str(path);
-		int i = (int)str.rfind('\\');
+		size_t i = str.rfind('\\');
 		wmemset(parent, 0, PATH_BUFF_LEN);
 		wmemcpy(parent, path, i);
 	}

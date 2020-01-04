@@ -97,8 +97,8 @@ public:
 	// Find path component at depth of 1 done without accessing the FS on disk
 	void ReplayProjections(
 		__in PCWSTR virtDir,
-		__out std::vector<std::wstring>* virtInclusions,
-		__out std::vector<std::wstring>* virtExclusions
+		__out std::vector<std::wstring>& virtInclusions,
+		__out std::vector<std::wstring>& virtExclusions
 	);
 
 	// Find a repath that has the longest matching prefix path

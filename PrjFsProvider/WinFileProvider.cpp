@@ -96,7 +96,6 @@ HRESULT winFileDirScan
 		return ERROR_INVALID_HANDLE;
 	}
 
-	HRESULT hr;
 	DWORD dwError = 0;
 
 	do
@@ -122,9 +121,6 @@ HRESULT winFileDirScan
 			}
 			(*lpFiles)[std::wstring(ffd.cFileName)] = fileBasicInfo;
 			
-			// TODO remove
-			//hr = PrjFillDirEntryBuffer(ffd.cFileName, &fileBasicInfo, dirEntryBufferHandle);
-
 #ifdef __DIRECTORY_WORKAROUND__
 			// Create shadow file for directory
 			if (fileBasicInfo.IsDirectory
@@ -145,15 +141,11 @@ HRESULT winFileDirScan
 				fileBasicInfo.LastWriteTime.HighPart = ffd.ftLastWriteTime.dwHighDateTime;
 				fileBasicInfo.LastWriteTime.LowPart = ffd.ftLastWriteTime.dwLowDateTime;
 
-
 				if (lpFiles->count(pathBuff))
 				{
 					printf_s("[%s] file name conflict %ls", __func__, pathBuff);
 				}
 				(*lpFiles)[std::wstring(pathBuff)] = fileBasicInfo;
-
-				// TODO remove
-				//hr = PrjFillDirEntryBuffer(pathBuff, &fileBasicInfo, dirEntryBufferHandle);
 
 				printf_s("[%s] Shadow file created for %ls\n", __func__, pathBuff);
 			}
