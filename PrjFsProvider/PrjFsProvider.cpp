@@ -63,6 +63,7 @@ void PrjFsSessionStore::FreeSession(LPCGUID lpcGuid)
 
 int PrjFsSessionStore::AddRemap(PCWSTR from, PCWSTR to)
 {
+	// TODO validate the parent of arg_to must exist 
 	// Let's forget the loops & priorities for remaps now; assuming they do not have conflict of scopes at all
 	wchar_t physFrom[PATH_BUFF_LEN] = { 0 };
 	this->GetRepath(from, physFrom);
@@ -116,99 +117,122 @@ void PrjFsSessionStore::ReplayProjections(
 		
 		int less;
 
-		if (hr = lpathcmpW(it->ToPath, physDir, &less))
-		{
-			if (less <= 0)
-			{
-				// nop
-			}
-			else if (1 == less)
-			{
-				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
-				GetPathLastComponent(it->ToPath, pathBuff);
+if (hr = lpathcmpW(it->ToPath, physDir, &less))
+{
+	if (less <= 0)
+	{
+		// nop
+	}
+	else if (1 == less)
+	{
+		wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
+		GetPathLastComponent(it->ToPath, pathBuff);
 
-				std::vector<std::wstring>::iterator it_f;
-				if (virtExclusions.end() != (it_f = std::find(virtExclusions.begin(), virtExclusions.end(), pathBuff)))
-				{
-					virtExclusions.erase(it_f);
-				}
-				virtInclusions.push_back(pathBuff);
-			}
-		}
-		// no else!
-		if (hr = lpathcmpW(it->FromPath, physDir, &less))
+		std::vector<std::wstring>::iterator it_f;
+		if (virtExclusions.end() != (it_f = std::find(virtExclusions.begin(), virtExclusions.end(), pathBuff)))
 		{
-			if (1 == less)
-			{
-				wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
-				GetPathLastComponent(it->FromPath, pathBuff);
-
-				std::vector<std::wstring>::iterator it_f;
-				if (virtInclusions.end() != (it_f = std::find(virtInclusions.begin(), virtInclusions.end(), pathBuff)))
-				{
-					virtInclusions.erase(it_f);
-				}
-				virtExclusions.push_back(pathBuff);
-				// ignore (since the repath will be added by rule #1 or #2 at some dir)
-			}
+			virtExclusions.erase(it_f);
 		}
+		virtInclusions.push_back(pathBuff);
+	}
+}
+// no else!
+if (hr = lpathcmpW(it->FromPath, physDir, &less))
+{
+	if (1 == less)
+	{
+		wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
+		GetPathLastComponent(it->FromPath, pathBuff);
+
+		std::vector<std::wstring>::iterator it_f;
+		if (virtInclusions.end() != (it_f = std::find(virtInclusions.begin(), virtInclusions.end(), pathBuff)))
+		{
+			virtInclusions.erase(it_f);
+		}
+		virtExclusions.push_back(pathBuff);
+		// ignore (since the repath will be added by rule #1 or #2 at some dir)
+	}
+}
 	}
 	return;
 }
 
 void PrjFsSessionStore::AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath)
 {
-	// This function ensures any repath, at time of insertion, is "fully expanded"
-	// to its oldest path possible; and updates if an old virtPath already exists.
-	// This results in values of repaths are always physical paths
+	// Do not check validity/invalidity of virtPath here
+	// Because only after this repath is added will virtPath be valid
+	// and virtPath may be valid (so we are updating an existing repath)
 
 	if (nullptr == virtPath || 0 == lstrlenW(virtPath))
 	{
 		printf_s("[%s] virtPath cannot be empty\n", __func__);
 		return;
 	}
-	
-	INT less;
-	PrjFsMap map(virtPath, possiblePhysPath); // force mem alloc
 
-	// Check dup
-	if (this->repaths.count(std::wstring(map.FromPath)))
-	{
-		printf_s("[%s] Key %ls will be replaced\n", __func__, map.FromPath);
-	}
+	// All repaths should always be valid virt-to-phys paths
+	// This means: 1) phys is latest, 2) existing & new repaths each are correct after insertion
+	// This function maintains these properties.
 
-	// Expand (theoretically a new repath should expand at most once)
-	for (auto it = this->repaths.begin(); it != this->repaths.end(); ++it)
+	// No need to update ToPath of existing repaths
+	// Because ToPath is physical, if that physical location (or its uplevel) shall be 
+	// mapped to somewhere new, then AddRemap shall be called first, 
+	// which in turn calls AddRepath with new location as arg_virtPath.
+	// That call will replace all matching existing repaths by its *FromPath*.
+
+	// Invalidate existing repaths (by FromPath only)
+	proj_t::iterator repath_it = this->repaths.begin();
+	proj_t::iterator repath_end = this->repaths.end();
+	while (repath_it != repath_end)
 	{
-		std::pair<std::wstring, std::wstring> pair = *it;
-		// If the newer toPath is deeper or equal to the older virtPath
-		if (lpathcmpW(map.ToPath, pair.first.data(), &less))
+		pair_t pair = *repath_it;
+		INT less;
+		if (lpathcmpW(virtPath, pair.first.data(), &less))
 		{
 			if (less < 0)
 			{
-				// Make sure map.ToPath is not expandable before insertion
-				wchar_t physMapToPath[PATH_BUFF_LEN] = { 0 };
-				this->GetRepath(map.ToPath, physMapToPath);
-				wmemset(map.ToPath, 0, PATH_BUFF_LEN);
-				lstrcpyW(map.ToPath, physMapToPath);
-				goto insert_one;
-				break;
-			}
-			else
-			{
-				// Replace the prefix (pair.first) part of map.ToPath to pair.second
-				// Then set it to map.ToPath; this cannot be done by GetRepath
-				ReplacePrefix(pair.first.data(), pair.second.data(), map.ToPath);
-				goto insert_one;
-				// Just to make sure...
-				break;
+				PrjFsMap proj(pair.first.data(), pair.second.data());
+				printf_s("[%s] Invalidated repath %ls", __func__, pair.first.data());
+				repath_it = this->repaths.erase(repath_it);
+				continue;
 			}
 		}
+		++repath_it;
 	}
-insert_one:
-	// Insert, may overwrite existing key
-	this->repaths[std::wstring(map.FromPath)] = std::wstring(map.ToPath);
-	return;
+
+	// Insert new repath at most once
+	wchar_t physPath[PATH_BUFF_LEN] = { 0 };
+	lstrcpyW(physPath, possiblePhysPath);
+
+	proj_t::iterator it;
+	if (this->repaths.end() != (it = std::find_if(this->repaths.begin(), this->repaths.end(),
+		[possiblePhysPath](pair_t const& pair)
+		{
+			INT less;
+			if (lpathcmpW(possiblePhysPath, pair.first.data(), &less))
+			{
+				if (less >= 0)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+	)))
+	{
+		pair_t pair = *it;
+		// Replace the prefix (pair.first) part of map.ToPath to pair.second
+		// Then set it to map.ToPath; this cannot be done by GetRepath
+		ReplacePrefix(pair.first.data(), pair.second.data(), physPath);
+	}
+
+	if (this->repaths.count(virtPath))
+	{
+		printf_s("[%s] Updating existing repath %ls", __func__, virtPath);
+	}
+	this->repaths[virtPath] = std::wstring(physPath);
+
+	// Validate result
+	assert(this->IsVirtPathValid(virtPath));
 }
 
 void PrjFsSessionStore::GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath) const
@@ -217,9 +241,12 @@ void PrjFsSessionStore::GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath) 
 	lstrcpyW(physPath, virtPath);
 
 	// Find and replace by the repath of the closest parent (or self)
-	// Do not change physPath while in loop, otherwise it may affect later iterations
-	INT less;
 
+	// Do not change physPath while in loop, otherwise it becomes too greedy 
+	// to ignore closer (repaths, once added, are *all* valid w/o priorities) match 
+	// in later iterations
+	
+	INT less;
 	std::pair<std::wstring, std::wstring> repath;
 
 	for (auto it = this->repaths.begin(); it != this->repaths.end(); ++it)
@@ -235,7 +262,7 @@ void PrjFsSessionStore::GetRepath(__in LPCWSTR virtPath, __out LPWSTR physPath) 
 			}
 		}
 	}
-	if (most <= 0)
+	if (most != MININT)
 	{
 		ReplacePrefix(repath.first.data(), repath.second.data(), physPath);
 	}

@@ -70,19 +70,24 @@ public:
 
 typedef PrjFsSessionRuntime* LPPrjFsSessionRuntime;
 typedef std::map<std::wstring, std::wstring, ProjectionComparator> proj_t;
+typedef std::pair<std::wstring, std::wstring> pair_t;
+
 // Expects singleton
 class PrjFsSessionStore
 {
 private:
 	LPCWSTR srcName;
 	std::vector<PrjFsSessionRuntime*> sessions;
-	
-	// Virtual to *physical* path mapping, without guaranteeing existence of virtual path
-	proj_t repaths;
-	
+
 	// Physical to physical path mapping for entry visibility calculation
 	std::vector<PrjFsMap> remaps; // user ops as well as backtracks
+	
+	// Always valid virtual-to-*physical* path mapping, without guaranteeing existence of virtual path
+	proj_t repaths;
 
+	// This function ensures any repath, at time of insertion, is "fully expanded"
+	// to its oldest path possible; and updates if an old virtPath already exists.
+	// This results in values of repaths are always physical paths
 	void AddRepath(LPCWSTR virtPath, LPCWSTR possiblePhysPath);
 public:
 	PrjFsSessionStore() = delete;

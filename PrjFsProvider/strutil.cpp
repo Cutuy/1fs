@@ -22,7 +22,7 @@ void ReplacePrefix(__in LPCWSTR prefixToReplace, __in LPCWSTR prefixToSet, __ino
 {
 	if (!wcsstr(inOutBuff, prefixToReplace)) 
 	{
-		printf_s("[%s] Prefix %ls not found in %ls", __func__, prefixToReplace, inOutBuff);
+		//printf_s("[%s] Prefix %ls not found in %ls\n", __func__, prefixToReplace, inOutBuff);
 		return;
 	}
 	wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
@@ -35,7 +35,7 @@ void GetPathLastComponent(__in LPCWSTR path, __out LPWSTR last)
 {
 	std::wstring str(path);
 	size_t i = str.rfind('\\');
-	if (i < 0)
+	if (i == std::wstring::npos)
 	{
 		lstrcpyW(last, str.substr(0).data());
 	}
@@ -52,7 +52,7 @@ void GetPathFirstComponent(__in LPCWSTR path, __out LPWSTR first)
 {
 	std::wstring str(path);
 	size_t i = str.find('\\');
-	if (i < 0)
+	if (i == std::wstring::npos)
 	{
 		lstrcpyW(first, path);
 	}

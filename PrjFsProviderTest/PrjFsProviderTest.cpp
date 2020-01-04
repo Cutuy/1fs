@@ -32,8 +32,6 @@ void PrjFsSessionStore::TEST_ClearProjections() {
     this->remaps.clear();
 }
 
-
-
 void testStringUtils()
 {
     LPCWSTR str1 = LR"(aaa\bbbb\c\d)";
@@ -83,83 +81,125 @@ void testStringUtils()
     wmemset(pathBuff, 0, PATH_BUFF_LEN);
     GetPathLastComponent(str7, pathBuff);
     assert(0 == lstrcmpW(pathBuff, LR"(d)"));
-    while (1);
 }
+
+#define CLEAR_VIEW inclusions.clear(); exclusions.clear(); 
+#define CLEAR_CASE gSessStore.TEST_ClearProjections();
+
+#define VIEW_AT(VIEW_POINT)  gSessStore.ReplayProjections(VIEW_POINT, inclusions, exclusions)
 
 void testProjectionReplays()
 {
     std::vector<std::wstring> inclusions;
     std::vector<std::wstring> exclusions;
 
-    // Case 1
+#pragma region Case 1
+    CLEAR_CASE;
     gSessStore.AddRemap(LR"(a\g\h)", LR"(a\j)");
     gSessStore.AddRemap(LR"(a\f)", LR"(a\j\p)");
 
     // view at a
-    gSessStore.ReplayProjections(LR"(a)", inclusions, exclusions);
+    CLEAR_VIEW;
+    VIEW_AT(LR"(a)");
     assert(0 == lstrcmpW(inclusions.at(0).data(), LR"(j)"));
     assert(0 == lstrcmpW(exclusions.at(0).data(), LR"(f)"));
-    inclusions.clear();
-    exclusions.clear();
     // view at j
-    gSessStore.ReplayProjections(LR"(a\j)", inclusions, exclusions);
+    CLEAR_VIEW;
+    VIEW_AT(LR"(a\j)");
     assert(0 == lstrcmpW(inclusions.at(0).data(), LR"(p)"));
     assert(exclusions.size() == 0);
-    inclusions.clear();
-    exclusions.clear();
     // view at p
-    gSessStore.ReplayProjections(LR"(a\j\p)", inclusions, exclusions);
+    CLEAR_VIEW;
+    VIEW_AT(LR"(a\j\p)");
     assert(inclusions.size() == 0);
     assert(exclusions.size() == 0);
-    inclusions.clear();
-    exclusions.clear();
     // view at root
-    gSessStore.ReplayProjections(LR"()", inclusions, exclusions);
+    CLEAR_VIEW;
+    VIEW_AT(LR"()");
     assert(inclusions.size() == 0);
     assert(exclusions.size() == 0);
-    inclusions.clear();
-    exclusions.clear();
     // view at arbitrary invalid paths
-    gSessStore.ReplayProjections(LR"(a\m)", inclusions, exclusions);
+    CLEAR_VIEW;
+    VIEW_AT(LR"(a\m)");
     assert(inclusions.size() == 0);
     assert(exclusions.size() == 0);
-    inclusions.clear();
-    exclusions.clear();
     // view at g
-    gSessStore.ReplayProjections(LR"(a\g)", inclusions, exclusions);
+    CLEAR_VIEW;
+    VIEW_AT(LR"(a\g)");
     assert(inclusions.size() == 0);
     assert(exclusions.at(0).data(), LR"(h)");
-    inclusions.clear();
-    exclusions.clear();
-
-    gSessStore.TEST_ClearProjections();
-
+#pragma endregion
+#pragma region Case 2
     // A bug found while in dev - the TIME of rule taking effect matters!
     // Case 2
+    CLEAR_CASE;
     gSessStore.AddRemap(LR"(f0)", LR"(f1)");
     gSessStore.AddRemap(LR"(f1\p)", LR"(f1\q)");
     gSessStore.AddRemap(LR"(f1)", LR"(f2)");
 
     // view at f2
-    gSessStore.ReplayProjections(LR"(f2)", inclusions, exclusions);
+    CLEAR_VIEW;
+    VIEW_AT(LR"(f2)");
     assert(inclusions.at(0).data(), LR"(m)");
     assert(exclusions.at(0).data(), LR"(t)");
-    inclusions.clear();
-    exclusions.clear();
-
-    gSessStore.TEST_ClearProjections();
-
+#pragma endregion
+#pragma region Case 3
     // Another bug... self cancelling rules
     // This case reveals that the redesigned remap
     // should be both ordered chronologically as well as unique in FromPath
+    CLEAR_CASE;
     gSessStore.AddRemap(LR"(f0\p)", LR"(p)");
     gSessStore.AddRemap(LR"(p)", LR"(f0\p)");
     
     // view at root
-    gSessStore.ReplayProjections(LR"()", inclusions, exclusions);
+    CLEAR_VIEW;
+    VIEW_AT(LR"()");
     assert(inclusions.size() == 0);
     assert(exclusions.size() == 0);
-    while (1);
+#pragma endregion
+    CLEAR_CASE;
+}
+
+void testUltimateBoss()
+{
+    wchar_t pathBuff[PATH_BUFF_LEN];
+
+    CLEAR_CASE;
+    gSessStore.AddRemap(LR"(x)", LR"(a)");
+    gSessStore.AddRemap(LR"(q\b)", LR"(a\b)");
+
+    gSessStore.GetRepath(LR"(a)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(x)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\b)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(q\b)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    assert(!gSessStore.IsVirtPathValid(LR"(x\b)"));
+
+    CLEAR_CASE;
+    gSessStore.AddRemap(LR"(q\b)", LR"(a\b)");
+    gSessStore.AddRemap(LR"(x)", LR"(a)");
+
+    gSessStore.GetRepath(LR"(a)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(x)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    gSessStore.GetRepath(LR"(a\b)", pathBuff);
+    assert(0 == lstrcmpW(pathBuff, LR"(x\b)"));
+    wmemset(pathBuff, 0, PATH_BUFF_LEN);
+
+    assert(gSessStore.IsVirtPathValid(LR"(q)"));
+    assert(!gSessStore.IsVirtPathValid(LR"(q\b)"));
+    assert(!gSessStore.IsVirtPathValid(LR"(x)"));
+    assert(!gSessStore.IsVirtPathValid(LR"(x\b)"));
+    assert(gSessStore.IsVirtPathValid(LR"(a)"));
+    assert(gSessStore.IsVirtPathValid(LR"(a\b)"));
+    assert(gSessStore.IsVirtPathValid(LR"(a\b\c)"));
+    assert(gSessStore.IsVirtPathValid(LR"(a\b\c\d)"));
+
+    CLEAR_CASE;
 }
 
 void testRepathExpansions()
@@ -234,8 +274,7 @@ void testRepathExpansions()
     assert(0 == lstrcmpW(pathBuff, LR"(a\m\d)")); // yes!
     wmemset(pathBuff, 0, PATH_BUFF_LEN);
 
-    gSessStore.TEST_ClearProjections();
-    while (1);
+    CLEAR_CASE;
 }
 
 void applyTestRepaths()
@@ -267,6 +306,7 @@ int main()
     //testStringUtils();
     //testProjectionReplays();
     //testRepathExpansions();
+    testUltimateBoss();
 
     //applyTestRepaths();
 
