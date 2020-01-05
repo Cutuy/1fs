@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <strsafe.h>
 #include <assert.h>
+#include <combaseapi.h>
 #include <algorithm>
 
 #include "strutil.h"
@@ -461,6 +462,32 @@ HRESULT MyGetEnumCallback(
 		}
 		files[entry] = fbi;
 	}
+
+	printf_s("\n[%s] (%ls, %ls), before exclusion: %d entries\n",
+		__func__,
+		callbackData->FilePathName,
+		searchExpression,
+		(int)files.size());
+	std::for_each(files.begin(), files.end(), [virtDir](std::pair<const std::wstring, PRJ_FILE_BASIC_INFO>& pair) {
+		printf_s("%ls", pair.first.data());
+		HRESULT hr;
+		PRJ_FILE_STATE fState;
+		wchar_t virtFile[PATH_BUFF_LEN] = { 0 };
+		swprintf_s(virtFile, L"%ls%ls%ls%ls%ls",
+			DstName, lstrlenW(virtDir) ? DIRECTORY_SEP_PATH : L"",
+			virtDir, DIRECTORY_SEP_PATH,
+			pair.first.data());
+
+		hr = PrjGetOnDiskFileState(virtFile, &fState);
+		if (SUCCEEDED(hr))
+		{
+			printf_s("\t\t%d", (int)fState);
+		}
+		printf_s("\n");
+	});
+	printf_s("\n");
+
+
 	for (auto it = exclusions.begin(); it != exclusions.end(); ++it)
 	{
 		// Exclude item from enum results for the current call
@@ -497,7 +524,7 @@ HRESULT MyGetEnumCallback(
 			callbackData->FilePathName, 
 			searchExpression,
 			(int)files.size());
-		std::for_each(files.begin(), files.end(), [](std::pair<const std::wstring, PRJ_FILE_BASIC_INFO>& pair) {
+		std::for_each(files.begin(), files.end(), [virtDir](std::pair<const std::wstring, PRJ_FILE_BASIC_INFO>& pair) {
 			printf_s("%ls\n", pair.first.data());
 		});
 		printf_s("\n");
@@ -524,7 +551,7 @@ HRESULT MyGetPlaceholderCallback(
 	swprintf_s(physFileAbs, L"%ls%ls%ls",
 		gSessStore.GetRoot(), DIRECTORY_SEP_PATH, physFile);
 
-	printf_s("[%s] physFileAbs %ls\n", __func__, physFileAbs);
+	//printf_s("[%s] physFileAbs %ls\n", __func__, physFileAbs);
 
 	HRESULT hr;
 
@@ -542,7 +569,7 @@ HRESULT MyGetPlaceholderCallback(
 		virtFile,
 		&placeholderInfo,
 		sizeof(placeholderInfo));
-	printf_s("[%s] Placeholder written for %ls\n", __func__, virtFile);
+	//printf_s("[%s] Placeholder written for %ls\n", __func__, virtFile);
 
 	return S_OK;
 }
@@ -645,6 +672,12 @@ HRESULT MyNotificationCallback(
 )
 {
 	printf_s("[%s] dir %d notif %ld from %ls to %ls\n", __func__, isDirectory, notification, callbackData->FilePathName, destinationFileName);
+	if (notification == PRJ_NOTIFICATION_PRE_RENAME)
+	{
+		printf_s("[%s] Pre-rename received for %ls -> %ls\n", __func__, 
+			callbackData->FilePathName, destinationFileName);
+
+	}
 	if (notification == PRJ_NOTIFICATION_FILE_RENAMED)
 	{
 		if (wcslen(callbackData->FilePathName) == 0
@@ -655,11 +688,31 @@ HRESULT MyNotificationCallback(
 			return ERROR_NOT_SUPPORTED;
 		}
 
+		HRESULT hr;
+		PRJ_FILE_STATE fState;
+		wchar_t pathBuff[PATH_BUFF_LEN] = { 0 };
+		swprintf_s(pathBuff, L"%ls%ls%ls", DstName, DIRECTORY_SEP_PATH, callbackData->FilePathName);
+		hr = PrjGetOnDiskFileState(pathBuff, &fState);
+		printf_s("[%s] File state %ls\t\t%d\n", __func__, pathBuff, (int)fState);
+
 		PRJ_UPDATE_FAILURE_CAUSES causes;
+		hr = PrjDeleteFile(
+			callbackData->NamespaceVirtualizationContext,
+			callbackData->FilePathName,
+			PRJ_UPDATE_ALLOW_DIRTY_METADATA,
+			&causes
+		);
+		if (FAILED(hr))
+		{
+			printf_s("[%s] Deletion failed %ls\n", __func__, callbackData->FilePathName);
+		}
+		else
+		{
+			printf_s("[%s] Deleted projected file %ls\n", __func__, callbackData->FilePathName);
+		}
 
 		gSessStore.AddRemap(callbackData->FilePathName, destinationFileName);
 		printf_s("[%s] Added remap %ls %ls\n", __func__, callbackData->FilePathName, destinationFileName);
-
 
 #ifdef __DIRECTORY_WORKAROUND__
 		// Note that Windows Shell does not allow folder and file has the same under
@@ -677,11 +730,65 @@ HRESULT MyNotificationCallback(
 			wchar_t dstBuff[PATH_BUFF_LEN] = { 0 };
 			wmemcpy(dstBuff, destinationFileName, lstrlenW(destinationFileName) - lstrlenW(SHADOW_FILE_SUFFIX));
 			
+			fState = (PRJ_FILE_STATE)0ULL;
+			causes = (PRJ_UPDATE_FAILURE_CAUSES)0ULL;
+			wmemset(pathBuff, 0, PATH_BUFF_LEN);
+			swprintf_s(pathBuff, L"%ls%ls%ls", DstName, DIRECTORY_SEP_PATH, srcBuff);
+			hr = PrjGetOnDiskFileState(pathBuff, &fState);
+			printf_s("[%s] File state %ls\t\t%d\n", __func__, pathBuff, (int)fState);
+
+			// If the src folder of rename is not empty (regardless of dirty), PrjDeleteFile will fail
+			// Here we can *hide* it to cheat ProjFS (though cannot prevent a copy of folder made by ProjFS)
+			// and also add it to exclusion list of 1fs
+			HRESULT hr;
+			PRJ_FILE_BASIC_INFO fileBasicInfo = {};
+
+			LPCWSTR virtFile = srcBuff;
+			wchar_t physFile[PATH_BUFF_LEN] = { 0 };
+			wchar_t physFileAbs[PATH_BUFF_LEN] = { 0 };
+			gSessStore.GetRepath(virtFile, physFile);
+			swprintf_s(physFileAbs, L"%ls%ls%ls",
+				gSessStore.GetRoot(), DIRECTORY_SEP_PATH, physFile);
+
+			hr = winFileScan(physFileAbs, &fileBasicInfo);
+			//fileBasicInfo.IsDirectory = false;
+			fileBasicInfo.FileAttributes = FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN;
+
+			PRJ_PLACEHOLDER_INFO placeholderInfo = {};
+			placeholderInfo.FileBasicInfo = fileBasicInfo;
+
+			// Set VersionInfo, otherwise PrjUpdateFile has no effect
+			GUID instanceId;
+			hr = CoCreateGuid(&instanceId);
+
+			memcpy(
+				placeholderInfo.VersionInfo.ContentID,
+				&instanceId,
+				sizeof(instanceId));
+			
+			hr = PrjUpdateFileIfNeeded(
+				callbackData->NamespaceVirtualizationContext,
+				srcBuff,
+				&placeholderInfo,
+				sizeof(placeholderInfo),
+				PRJ_UPDATE_ALLOW_DIRTY_METADATA,
+				&causes
+			);
+			if (FAILED(hr))
+			{
+				printf_s("[%s] Update failed for directory %ls\n", __func__, srcBuff);
+			}
+			else
+			{
+				printf_s("[%s] Updated projected directory %ls\n", __func__, srcBuff);
+			}
+
 			gSessStore.AddRemap(srcBuff, dstBuff);
 			printf_s("[%s] Added remap %ls %ls\n", __func__, srcBuff, dstBuff);
 
 		}
 #endif
+
 	}
 	return S_OK;
 }

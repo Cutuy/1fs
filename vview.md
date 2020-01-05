@@ -22,9 +22,9 @@ Effective knowledge finding > Personal organization vs public view of directory
 
 [vview-o2-kr2a ✔] Correctness of return values of in-mem projections for directories (ignoring ghost cache issues)
 
-[vview-o2-kr2b 🟢] Eliminate ghost cache of directory
+[vview-o2-kr2b ✔] Eliminate ghost cache of directory
 
-[vview-o2-kr2c] Command-line & WinShell file renames to reflect on fs
+[vview-o2-kr2c 🟢] Command-line & WinShell file renames to reflect on fs
 
 [vview-o2-kr3] Restore the modified projection upon a new projection for all files previously projected
 
@@ -67,3 +67,6 @@ Math proof of correctness?
 ## Notes (1/3)
 - Tired day, mostly hunting for bugs
 - The "ghost cache" is still there with different GUID!!
+
+## Next (1/5)
+- _MOVE file use its folder's metadata for datetime

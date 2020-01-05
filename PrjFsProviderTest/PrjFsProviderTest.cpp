@@ -11,8 +11,7 @@
 
 #pragma comment(lib, "ProjectedFSLib.lib")
 
-#define SrcName LR"(B:\src)"
-#define DstName LR"(A:\dst13)"
+
 
 PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT instanceHandle;
 PRJ_CALLBACKS callbackTable2 = {
@@ -321,7 +320,7 @@ int main()
     testRepathExpansions();
     testUltimateBoss();
 
-    applyTestRepaths();
+    //applyTestRepaths();
 
     GUID instanceId;
     hr = CoCreateGuid(&instanceId);

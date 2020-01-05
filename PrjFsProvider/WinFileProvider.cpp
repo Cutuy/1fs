@@ -42,7 +42,8 @@ HRESULT winFileScan
 		FILE_SHARE_READ,       // share for reading
 		NULL,                  // default security
 		OPEN_EXISTING,         // existing file only
-		FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, // normal file
+		// https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea#directories
+		(fileAttr & FILE_ATTRIBUTE_DIRECTORY)? FILE_FLAG_BACKUP_SEMANTICS : FILE_FLAG_OVERLAPPED, // normal file
 		NULL);
 	// Consider FILE_FLAG_NO_BUFFERING?
 	// 	((FILE_ATTRIBUTE_DIRECTORY & fileAttr)? FILE_FLAG_BACKUP_SEMANTICS: 0);
