@@ -1,0 +1,13 @@
+GetEnum
+IRP_MJ_DIRECTORY_CONTROL 
+0> IRP_MJ_CREATE at 'dir'
+1> Path: 'dir\*', Filter: *, return .
+2> Path: 'dir', return each entry (.., a, b)
+3> Path: 'dir', NO MORE FILES
+
+9:57:19.7427100 AM	cmd.exe	13912	IRP_MJ_CREATE	A:\dst38	SUCCESS	Desired Access: Read Data/List Directory, Synchronize, Disposition: Open, Options: Directory, Synchronous IO Non-Alert, Attributes: n/a, ShareMode: Read, Write, Delete, AllocationSize: n/a, OpenResult: Opened
+9:57:19.7427530 AM	cmd.exe	13912	IRP_MJ_DIRECTORY_CONTROL	A:\dst38\*	SUCCESS	Type: QueryDirectory, Filter: *, 2: .
+9:57:19.7435122 AM	cmd.exe	13912	IRP_MJ_DIRECTORY_CONTROL	A:\dst38	SUCCESS	Type: QueryDirectory, 1: .., 2: a, 3: a_MOVE, 4: b, 5: b_MOVE
+9:57:19.7450914 AM	cmd.exe	13912	IRP_MJ_DIRECTORY_CONTROL	A:\dst38	NO MORE FILES	Type: QueryDirectory
+9:57:19.7451113 AM	cmd.exe	13912	IRP_MJ_CLEANUP	A:\dst38	SUCCESS	
+9:57:19.7451297 AM	cmd.exe	13912	IRP_MJ_CLOSE	A:\dst38	SUCCESS	

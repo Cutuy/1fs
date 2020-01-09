@@ -70,3 +70,14 @@ Math proof of correctness?
 
 ## Next (1/5)
 - _MOVE file use its folder's metadata for datetime
+
+# Summary (1/6)
+Finally found out basing 1fs on top of Windows ProjFS is inappropriate... Due to ProjFS's "merge" of local fs & projected fs, and more importantly,
+the cache is not purged eagerly (except the the file state become Tombstone or simply be deleted explicitly), and that no API is available to 
+*update* the file status directly, it results in the user view (either by dir or File Explorer) showing deleted (from src) files still.
+
+For dst renamed/removed files, ProjFs handles correctly; but has no support for directories.
+For src files, changes on them result in changes on result of dir enum & placeholder enum - but ProjFS still "remembers" and merges new results with older ones
+except explicit deletion. However, 1fs does not know how src is changed.
+
+We have two options now - try implementing src watcher (which greatly compromises the promise of lazy load), or try re-basing 1fs on file system filter.

@@ -1,0 +1,10 @@
+Effective knowledge finding > Personal organization vs public view of directory
+Parent: [vview]
+
+## Objective
+[ftl-o1] Found the basis for 1fs impl as minifilter driver
+
+## Key Results
+[ftl-o1-kr1 🟢] Debug minispy & simrep from kernel mode
+[ftl-o1-kr2] Find out major functions involved in dir enum, file creation, and file read
+
