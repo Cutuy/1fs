@@ -83,7 +83,6 @@ HRESULT winFileDirScan
 	__in LPCWSTR searchExpression,
 	__in BOOL isSingleEntry,
 	__inout PRJ_DIR_ENTRY_BUFFER_HANDLE dirEntryBufferHandle,
-	__inout LPPrjFsSessionRuntime lpSess,
 	__out std::map<std::wstring, PRJ_FILE_BASIC_INFO>* lpFiles
 )
 {
@@ -163,16 +162,12 @@ HRESULT winFileDirScan
 	if (dwError != ERROR_NO_MORE_FILES)
 	{
 		printf_s("[%s] Unexpected last error\n", __func__);
-		return ERROR;
+		return dwError;
 	}
 
 l_getEnumComplete:
 	// Search into a directory will come 2 requests, the first will be singleEntry with "*" as searchExp
 	// Avoid blocking the second call by testing isSingleEntry
-	if (!isSingleEntry)
-	{
-		lpSess->IsGetEnumComplete = true;
-	}
 
 	return S_OK;
 }

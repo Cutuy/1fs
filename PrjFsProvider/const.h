@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #define __DIRECTORY_WORKAROUND__
 
 #ifdef __DIRECTORY_WORKAROUND__
@@ -10,4 +10,4 @@
 #define ENTER_DIRECTORY_PATH L"\\*"
 
 #define SrcName LR"(B:\src)"
-#define DstName LR"(A:\dst27)"
+#define DstName LR"(A:\dst38)"

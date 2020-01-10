@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <combaseapi.h>
 #include <algorithm>
+#include <iterator>
 
 #include "strutil.h"
 #include "PrjFsProvider.h"
@@ -400,10 +401,16 @@ HRESULT MyGetEnumCallback(
 		searchExpression,
 		isSingleEntry,
 		dirEntryBufferHandle,
-		lpSess, // TODO remove session logic from dir scan
 		&files
 	);
-	if (!SUCCEEDED(hr))
+	if (SUCCEEDED(hr))
+	{
+		if (!isSingleEntry)
+		{
+			lpSess->IsGetEnumComplete = true;
+		}
+	}
+	else
 	{
 		return hr;
 	}
@@ -529,6 +536,53 @@ HRESULT MyGetEnumCallback(
 		});
 		printf_s("\n");
 	}
+
+	// The following is commented out because it results in recursive calls to this function
+	/*
+	wmemset(physDirAbsEntered, 0, PATH_BUFF_LEN);
+	std::map<std::wstring, PRJ_FILE_BASIC_INFO> filesCache;
+	std::vector<std::wstring> filesDiff;
+
+	swprintf_s(physDirAbsEntered, L"%ls%ls%ls%ls", DstName,
+		lstrlenW(physDir) ? DIRECTORY_SEP_PATH : L"", physDir, ENTER_DIRECTORY_PATH);
+	hr = winFileDirScan(
+		physDirAbsEntered,
+		searchExpression,
+		isSingleEntry,
+		dirEntryBufferHandle,
+		&filesCache
+	);
+
+
+	std::map<std::wstring, PRJ_FILE_BASIC_INFO>::iterator filesCacheIt = filesCache.begin();
+	while (filesCacheIt != filesCache.end())
+	{
+		if (!files.count(filesCacheIt->first))
+		{
+			filesDiff.push_back(filesCacheIt->first);
+		}
+		++filesCacheIt;
+	}
+	std::for_each(filesDiff.begin(), filesDiff.end(), [&filesCache, callbackData](std::wstring& fn)
+		{
+			PRJ_FILE_BASIC_INFO fbi = filesCache[fn];
+			if (!fbi.IsDirectory)
+			{
+				HRESULT hr;
+				PRJ_UPDATE_FAILURE_CAUSES causes;
+				hr = PrjDeleteFile(
+					callbackData->NamespaceVirtualizationContext,
+					fn.data(),
+					PRJ_UPDATE_ALLOW_DIRTY_METADATA,
+					&causes
+				);
+				if (SUCCEEDED(hr))
+				{
+					printf_s("[%s] Purge cache %ls\n", __func__, fn.data());
+				}
+			}
+		});
+		*/
 
 	return S_OK;
 }
