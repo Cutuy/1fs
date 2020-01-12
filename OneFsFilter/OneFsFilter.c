@@ -19,20 +19,39 @@ Environment:
 
 #pragma prefast(disable:__WARNING_ENCODE_MEMBER_FUNCTION_POINTER, "Not valid for kernel mode drivers")
 
+#define UNICODE_PATH_POOL_TAG "unip"
 
-PFLT_FILTER gFilterHandle;
+#define PATH_COMP_SEPARATOR ((WCHAR)L'\\')
+#define PATH_ENTER_DIRECTORY (L"\\*")
+
+typedef struct _GLOBAL_DATA {
+    PFLT_FILTER Filter;
+    UNICODE_STRING SourceDirectory;
+    UNICODE_STRING DestinationDirectory;
+
+} global_t;
+
+
 ULONG_PTR OperationStatusCtx = 1;
 
-#define PTDBG_TRACE_ROUTINES            0x00000001
-#define PTDBG_TRACE_OPERATION_STATUS    0x00000002
+#define DBG_ERR            0x00000001
+#define DBG_WRN            0x00000002
+#define DBG_MSG            0x00000004
 
-ULONG gTraceFlags = PTDBG_TRACE_ROUTINES | PTDBG_TRACE_OPERATION_STATUS;
+#define DBG_ALL            0xFFFFFFFF
 
+ULONG gTraceFlags = DBG_ALL;
 
 #define PT_DBG_PRINT( _dbgLevel, _string )          \
-    (FlagOn(gTraceFlags,(_dbgLevel)) ?              \
+    (FlagOn(DBG_ALL,(_dbgLevel)) ?              \
         DbgPrint _string :                          \
         ((int)0))
+
+#define PrintError(_string) \
+    PT_DBG_PRINT(DBG_ERR, _string)
+
+global_t Globals;
+
 
 /*************************************************************************
     Prototypes
@@ -115,6 +134,17 @@ OneFsFilterDoRequestOperationStatus(
 
 EXTERN_C_END
 
+_When_(return == 0, _Post_satisfies_(String->Buffer != NULL))
+NTSTATUS
+AllocateUnicodeString(
+    _Inout_ PUNICODE_STRING String
+);
+
+VOID
+FreeUnicodeString(
+    _Inout_ PUNICODE_STRING String
+);
+
 //
 //  Assign text sections for each routine.
 //
@@ -126,6 +156,8 @@ EXTERN_C_END
 #pragma alloc_text(PAGE, OneFsFilterInstanceSetup)
 #pragma alloc_text(PAGE, OneFsFilterInstanceTeardownStart)
 #pragma alloc_text(PAGE, OneFsFilterInstanceTeardownComplete)
+#pragma alloc_text(PAGE, AllocateUnicodeString)
+#pragma alloc_text(PAGE, FreeUnicodeString)
 #endif
 
 //
@@ -401,7 +433,7 @@ Return Value:
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterInstanceSetup: Entered\n") );
 
     return STATUS_SUCCESS;
@@ -443,7 +475,7 @@ Return Value:
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterInstanceQueryTeardown: Entered\n") );
 
     return STATUS_SUCCESS;
@@ -479,7 +511,7 @@ Return Value:
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterInstanceTeardownStart: Entered\n") );
 }
 
@@ -513,7 +545,7 @@ Return Value:
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterInstanceTeardownComplete: Entered\n") );
 }
 
@@ -550,10 +582,147 @@ Return Value:
 {
     NTSTATUS status;
 
+    HANDLE hRegKey = NULL;
+    OBJECT_ATTRIBUTES attributes;
+    UNICODE_STRING regKeyName;
+    ULONG regValLength;
+
+    UCHAR regValStackBuffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(ULONG)];
+    PKEY_VALUE_PARTIAL_INFORMATION regValStack = (PKEY_VALUE_PARTIAL_INFORMATION)regValStackBuffer;
+    ULONG regValStackLength = sizeof(regValStackBuffer);  
+
+    PKEY_VALUE_PARTIAL_INFORMATION regValPool = NULL;
+    ULONG regValPoolLength = 0;
+
+    WCHAR sourceDirectoryTail;
+    WCHAR destinationDirectoryTail;
+
     UNREFERENCED_PARAMETER( RegistryPath );
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!DriverEntry: Entered\n") );
+
+    // Get scalar values from registry
+    InitializeObjectAttributes(&attributes,
+        RegistryPath,
+        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+        NULL,
+        NULL);
+    status = ZwOpenKey(&hRegKey, KEY_READ, &attributes);
+    if (!NT_SUCCESS(status))
+    {
+        PrintError(("[%s] Registry open failed: %08x", __func__, status));
+        goto DriverEntryCleanup;
+    }
+
+    // Get src dir from registry
+    RtlInitUnicodeString(&regKeyName, L"SourceDirectory");
+    status = ZwQueryValueKey(
+        hRegKey,
+        &regKeyName,
+        KeyValuePartialInformation,
+        NULL,
+        0,
+        &regValLength);
+    if (status != STATUS_BUFFER_TOO_SMALL & status != STATUS_BUFFER_OVERFLOW)
+    {
+        status = STATUS_INVALID_PARAMETER;
+        goto DriverEntryCleanup;
+    }
+    regValPool = ExAllocatePoolWithTag(PagedPool, regValLength, UNICODE_PATH_POOL_TAG);
+    if (regValPool == NULL)
+    {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        goto DriverEntryCleanup;
+    }
+    regValPoolLength = regValLength;
+
+    status = ZwQueryValueKey(
+        hRegKey,
+        &regKeyName,
+        KeyValuePartialInformation,
+        regValPool,
+        regValPoolLength,
+        &regValLength
+    );
+    if (!NT_SUCCESS(status))
+    {
+        goto DriverEntryCleanup;
+    }
+    if (regValStack->Type != REG_SZ) // Unicode nul terminated string
+    {
+        goto DriverEntryCleanup;
+    }
+    Globals.SourceDirectory.MaximumLength = (USHORT)regValStack->DataLength;
+    status = AllocateUnicodeString(&(Globals.SourceDirectory));
+    if (!NT_SUCCESS(status))
+    {
+        goto DriverEntryCleanup;
+    }
+    Globals.SourceDirectory.Length = (USHORT)regValStack->DataLength - sizeof(UNICODE_NULL);
+    RtlCopyMemory(Globals.SourceDirectory.Buffer, regValStack->Data, Globals.SourceDirectory.Length);
+    
+    // Get dst dir from registry
+    RtlInitUnicodeString(&regKeyName, L"DestinationDirectory");
+    status = ZwQueryValueKey(
+        hRegKey,
+        &regKeyName,
+        KeyValuePartialInformation,
+        regValPool,
+        regValPoolLength,
+        regValLength
+    );
+    if (!NT_SUCCESS(status))
+    {
+        if (status != STATUS_BUFFER_TOO_SMALL & status != STATUS_BUFFER_OVERFLOW)
+        {
+            // Free pool by the cleanup routine
+            goto DriverEntryCleanup;
+        }
+        // Else we know it's the pool's problem
+        ExFreePoolWithTag(regValPool, UNICODE_PATH_POOL_TAG);
+        regValPool = ExAllocatePoolWithTag(PagedPool, regValLength, UNICODE_PATH_POOL_TAG);
+        if (regValPool == NULL)
+        {
+            status = STATUS_INSUFFICIENT_RESOURCES;
+            goto DriverEntryCleanup;
+        }
+        regValPoolLength = regValLength;
+    }
+    status = ZwQueryValueKey(
+        hRegKey,
+        &regKeyName,
+        KeyValuePartialInformation,
+        regValPool,
+        regValPoolLength,
+        regValLength
+    );
+    if (!NT_SUCCESS(status))
+    {
+        goto DriverEntryCleanup;
+    }
+    if (regValStack->Type != REG_SZ) // Unicode nul terminated string
+    {
+        goto DriverEntryCleanup;
+    }
+    Globals.DestinationDirectory.MaximumLength = (USHORT)regValStack->DataLength;
+    status = AllocateUnicodeString(&(Globals.DestinationDirectory));
+    if (!NT_SUCCESS(status))
+    {
+        goto DriverEntryCleanup;
+    }
+    Globals.DestinationDirectory.Length = (USHORT)regValStack->DataLength - sizeof(UNICODE_NULL);
+    RtlCopyMemory(Globals.DestinationDirectory.Buffer, regValStack->Data, Globals.DestinationDirectory.Length);
+    
+    // Registry value validations
+    sourceDirectoryTail = (WCHAR)Globals.SourceDirectory.Buffer[Globals.SourceDirectory.Length / sizeof(WCHAR) - 1];
+    destinationDirectoryTail = (WCHAR)Globals.DestinationDirectory.Buffer[Globals.DestinationDirectory.Length / sizeof(WCHAR) - 1];
+    if (sourceDirectoryTail == PATH_COMP_SEPARATOR
+        || destinationDirectoryTail == PATH_COMP_SEPARATOR)
+    {
+        status = STATUS_INVALID_PARAMETER;
+        goto DriverEntryCleanup;
+    }
 
     //
     //  Register with FltMgr to tell it our callback routines
@@ -561,7 +730,7 @@ Return Value:
 
     status = FltRegisterFilter( DriverObject,
                                 &FilterRegistration,
-                                &gFilterHandle );
+                                &Globals.Filter );
 
     FLT_ASSERT( NT_SUCCESS( status ) );
 
@@ -571,14 +740,28 @@ Return Value:
         //  Start filtering i/o
         //
 
-        status = FltStartFiltering( gFilterHandle );
+        status = FltStartFiltering( Globals.Filter );
 
         if (!NT_SUCCESS( status )) {
 
-            FltUnregisterFilter( gFilterHandle );
+            FltUnregisterFilter( Globals.Filter );
         }
     }
 
+DriverEntryCleanup:
+    if (regValStack != NULL)
+    {
+        ExFreePoolWithTag(regValStack, UNICODE_PATH_POOL_TAG);
+        regValStack = NULL;
+    }
+    if (hRegKey != NULL)
+    {
+        ZwClose(hRegKey);
+    }
+    if (!NT_SUCCESS(status))
+    {
+        // TODO free unicode
+    }
     return status;
 }
 
@@ -609,10 +792,10 @@ Return Value:
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterUnload: Entered\n") );
 
-    FltUnregisterFilter( gFilterHandle );
+    FltUnregisterFilter( Globals.Filter );
 
     return STATUS_SUCCESS;
 }
@@ -657,7 +840,7 @@ Return Value:
     UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( CompletionContext );
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterPreOperation: Entered\n") );
 
     //
@@ -676,7 +859,7 @@ Return Value:
                                                     (PVOID)(++OperationStatusCtx) );
         if (!NT_SUCCESS(status)) {
 
-            PT_DBG_PRINT( PTDBG_TRACE_OPERATION_STATUS,
+            PT_DBG_PRINT(DBG_MSG,
                           ("OneFsFilter!OneFsFilterPreOperation: FltRequestOperationStatusCallback Failed, status=%08x\n",
                            status) );
         }
@@ -733,10 +916,11 @@ Return Value:
 {
     UNREFERENCED_PARAMETER( FltObjects );
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterOperationStatusCallback: Entered\n") );
 
-    PT_DBG_PRINT( PTDBG_TRACE_OPERATION_STATUS,
+    PT_DBG_PRINT(DBG_MSG,
                   ("OneFsFilter!OneFsFilterOperationStatusCallback: Status=%08x ctx=%p IrpMj=%02x.%02x \"%s\"\n",
                    OperationStatus,
                    RequesterContext,
@@ -785,7 +969,7 @@ Return Value:
     UNREFERENCED_PARAMETER( CompletionContext );
     UNREFERENCED_PARAMETER( Flags );
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterPostOperation: Entered\n") );
 
     return FLT_POSTOP_FINISHED_PROCESSING;
@@ -827,7 +1011,7 @@ Return Value:
     UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( CompletionContext );
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
+    PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterPreOperationNoPostOperation: Entered\n") );
 
     // This template code does not do anything with the callbackData, but
@@ -886,4 +1070,40 @@ Return Value:
               ((iopb->MajorFunction == IRP_MJ_DIRECTORY_CONTROL) &&
                (iopb->MinorFunction == IRP_MN_NOTIFY_CHANGE_DIRECTORY))
              );
+}
+
+
+_When_(return == 0, _Post_satisfies_(String->Buffer != NULL))
+NTSTATUS
+AllocateUnicodeString(
+    _Inout_ PUNICODE_STRING String
+)
+{
+    PAGED_CODE();
+    String->Buffer = ExAllocatePoolWithTag(
+        NonPagedPool,
+        String->MaximumLength,
+        UNICODE_PATH_POOL_TAG
+    );
+    if (String->Buffer == NULL)
+    {
+        PrintError(("[%s] Allocation failed for size %d", __func__, String->MaximumLength));
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    String->Length = 0;
+    return STATUS_SUCCESS;
+}
+
+VOID
+FreeUnicodeString(
+    _Inout_ PUNICODE_STRING String
+)
+{
+    PAGED_CODE();
+    if (String->Buffer)
+    {
+        ExFreePoolWithTag(String->Buffer, UNICODE_PATH_POOL_TAG);
+    }
+    String->Length = String->MaximumLength = 0;
+    String->Buffer = NULL;
 }

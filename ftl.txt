@@ -5,6 +5,7 @@ Parent: [vview]
 [ftl-o1] Found the basis for 1fs impl as minifilter driver
 
 ## Key Results
-[ftl-o1-kr1 🟢] Debug minispy & simrep from kernel mode
-[ftl-o1-kr2] Find out major functions involved in dir enum, file creation, and file read
+[ftl-o1-kr1 ✔] Set up kernel dbg environment
+[ftl-o1-kr2 ✔] Debug minispy from kernel mode
+[ftl-o1-kr2 🟢] Find out major functions involved in dir enum, file creation, and file read
 

@@ -34,7 +34,7 @@ AddService          = %ServiceName%,,MiniFilter.Service
 
 [DefaultUninstall]
 DelFiles   = MiniFilter.DriverFiles
-;Consider use registry as well
+DelReg     = MiniFilter.DelRegistry
 
 [DefaultUninstall.Services]
 DelService = %ServiceName%,0x200      ;Ensure service is stopped before deleting
@@ -66,6 +66,8 @@ HKR,,"SupportedFeatures",0x00010001,0x3
 HKR,"Instances","DefaultInstance",0x00000000,%DefaultInstance%
 HKR,"Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
 HKR,"Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+HKR,"SourceDirectory", 0x00000000, "B:\src"
+HKR,"DestinationDirectory", 0x00000000, "A:\dst39"
 
 ;
 ; Copy Files
