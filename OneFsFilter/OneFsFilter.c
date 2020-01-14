@@ -13,11 +13,18 @@ Environment:
     Kernel mode
 
 --*/
+#pragma prefast(disable:__WARNING_ENCODE_MEMBER_FUNCTION_POINTER, "Not valid for kernel mode drivers")
+
+#pragma warning(error:4100)     //  Enable-Unreferenced formal parameter
+#pragma warning(error:4101)     //  Enable-Unreferenced local variable
+#pragma warning(error:4061)     //  Enable-missing enumeration in switch statement
+#pragma warning(error:4505)     //  Enable-identify dead functions
+
 
 #include <fltKernel.h>
 #include <dontuse.h>
 
-#pragma prefast(disable:__WARNING_ENCODE_MEMBER_FUNCTION_POINTER, "Not valid for kernel mode drivers")
+
 
 #define UNICODE_PATH_POOL_TAG "unip"
 
@@ -587,9 +594,11 @@ Return Value:
     UNICODE_STRING regKeyName;
     ULONG regValLength;
 
+    /* For scalar reg value only
     UCHAR regValStackBuffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(ULONG)];
     PKEY_VALUE_PARTIAL_INFORMATION regValStack = (PKEY_VALUE_PARTIAL_INFORMATION)regValStackBuffer;
     ULONG regValStackLength = sizeof(regValStackBuffer);  
+    */
 
     PKEY_VALUE_PARTIAL_INFORMATION regValPool = NULL;
     ULONG regValPoolLength = 0;
@@ -624,7 +633,7 @@ Return Value:
         NULL,
         0,
         &regValLength);
-    if (status != STATUS_BUFFER_TOO_SMALL & status != STATUS_BUFFER_OVERFLOW)
+    if (status != STATUS_BUFFER_TOO_SMALL && status != STATUS_BUFFER_OVERFLOW)
     {
         status = STATUS_INVALID_PARAMETER;
         goto DriverEntryCleanup;
@@ -649,18 +658,18 @@ Return Value:
     {
         goto DriverEntryCleanup;
     }
-    if (regValStack->Type != REG_SZ) // Unicode nul terminated string
+    if (regValPool->Type != REG_SZ) // Unicode nul terminated string
     {
         goto DriverEntryCleanup;
     }
-    Globals.SourceDirectory.MaximumLength = (USHORT)regValStack->DataLength;
+    Globals.SourceDirectory.MaximumLength = (USHORT)regValPool->DataLength;
     status = AllocateUnicodeString(&(Globals.SourceDirectory));
     if (!NT_SUCCESS(status))
     {
         goto DriverEntryCleanup;
     }
-    Globals.SourceDirectory.Length = (USHORT)regValStack->DataLength - sizeof(UNICODE_NULL);
-    RtlCopyMemory(Globals.SourceDirectory.Buffer, regValStack->Data, Globals.SourceDirectory.Length);
+    Globals.SourceDirectory.Length = (USHORT)regValPool->DataLength - sizeof(UNICODE_NULL);
+    RtlCopyMemory(Globals.SourceDirectory.Buffer, regValPool->Data, Globals.SourceDirectory.Length);
     
     // Get dst dir from registry
     RtlInitUnicodeString(&regKeyName, L"DestinationDirectory");
@@ -670,11 +679,11 @@ Return Value:
         KeyValuePartialInformation,
         regValPool,
         regValPoolLength,
-        regValLength
+        &regValLength
     );
     if (!NT_SUCCESS(status))
     {
-        if (status != STATUS_BUFFER_TOO_SMALL & status != STATUS_BUFFER_OVERFLOW)
+        if (status != STATUS_BUFFER_TOO_SMALL && status != STATUS_BUFFER_OVERFLOW)
         {
             // Free pool by the cleanup routine
             goto DriverEntryCleanup;
@@ -695,24 +704,24 @@ Return Value:
         KeyValuePartialInformation,
         regValPool,
         regValPoolLength,
-        regValLength
+        &regValLength
     );
     if (!NT_SUCCESS(status))
     {
         goto DriverEntryCleanup;
     }
-    if (regValStack->Type != REG_SZ) // Unicode nul terminated string
+    if (regValPool->Type != REG_SZ) // Unicode nul terminated string
     {
         goto DriverEntryCleanup;
     }
-    Globals.DestinationDirectory.MaximumLength = (USHORT)regValStack->DataLength;
+    Globals.DestinationDirectory.MaximumLength = (USHORT)regValPool->DataLength;
     status = AllocateUnicodeString(&(Globals.DestinationDirectory));
     if (!NT_SUCCESS(status))
     {
         goto DriverEntryCleanup;
     }
-    Globals.DestinationDirectory.Length = (USHORT)regValStack->DataLength - sizeof(UNICODE_NULL);
-    RtlCopyMemory(Globals.DestinationDirectory.Buffer, regValStack->Data, Globals.DestinationDirectory.Length);
+    Globals.DestinationDirectory.Length = (USHORT)regValPool->DataLength - sizeof(UNICODE_NULL);
+    RtlCopyMemory(Globals.DestinationDirectory.Buffer, regValPool->Data, Globals.DestinationDirectory.Length);
     
     // Registry value validations
     sourceDirectoryTail = (WCHAR)Globals.SourceDirectory.Buffer[Globals.SourceDirectory.Length / sizeof(WCHAR) - 1];
@@ -749,10 +758,10 @@ Return Value:
     }
 
 DriverEntryCleanup:
-    if (regValStack != NULL)
+    if (regValPool != NULL)
     {
-        ExFreePoolWithTag(regValStack, UNICODE_PATH_POOL_TAG);
-        regValStack = NULL;
+        ExFreePoolWithTag(regValPool, UNICODE_PATH_POOL_TAG);
+        regValPool = NULL;
     }
     if (hRegKey != NULL)
     {
@@ -760,7 +769,8 @@ DriverEntryCleanup:
     }
     if (!NT_SUCCESS(status))
     {
-        // TODO free unicode
+        FreeUnicodeString(&Globals.SourceDirectory);
+        FreeUnicodeString(&Globals.DestinationDirectory);
     }
     return status;
 }
