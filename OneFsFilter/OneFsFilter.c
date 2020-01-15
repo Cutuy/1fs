@@ -57,6 +57,12 @@ ULONG gTraceFlags = DBG_ALL;
 #define PrintError(_string) \
     PT_DBG_PRINT(DBG_ERR, _string)
 
+#define PrintMessage(_string) \
+    PT_DBG_PRINT(DBG_MSG, _string)
+
+#define PrintWarning(_string) \
+    PT_DBG_PRINT(DBG_WRN, _string)
+
 global_t Globals;
 
 
@@ -103,6 +109,14 @@ OneFsFilterInstanceQueryTeardown (
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_QUERY_TEARDOWN_FLAGS Flags
     );
+
+FLT_PREOP_CALLBACK_STATUS
+OneFsFilterPreCreate(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
+);
+
 
 FLT_PREOP_CALLBACK_STATUS
 OneFsFilterPreOperation (
@@ -176,7 +190,7 @@ CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
 
     { IRP_MJ_CREATE,
       0,
-      OneFsFilterPreOperation,
+      OneFsFilterPreCreate,
       OneFsFilterPostOperation },
 /*
     { IRP_MJ_CREATE_NAMED_PIPE,
@@ -442,6 +456,13 @@ Return Value:
 
     PT_DBG_PRINT( DBG_MSG,
                   ("OneFsFilter!OneFsFilterInstanceSetup: Entered\n") );
+
+
+    if (FLAGOn(Flags, FLTFL_INSTANCE_SETUP_AUTOMATIC_ATTACHMENT))
+    {
+        PrintMessage(("[%s] Automatic attachment blocked for volume %p\n", __func__, FltObjects->Volume));
+        return STATUS_FLT_DO_NOT_ATTACH;
+    }
 
     return STATUS_SUCCESS;
 }
@@ -810,6 +831,113 @@ Return Value:
     return STATUS_SUCCESS;
 }
 
+FLT_PREOP_CALLBACK_STATUS
+OneFsFilterPreCreate(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
+)
+{
+    NTSTATUS status;
+    FLT_PREOP_CALLBACK_STATUS callbackStatus;
+
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+
+    // Okay if we are awaiting user mode communication?
+    PAGED_CODE();
+
+    PrintMessage(("OneFsFilter!%s: Entered\n", __func__));
+
+    // Default to passthrough
+    status = STATUS_SUCCESS;
+    callbackStatus = FLT_PREOP_SUCCESS_NO_CALLBACK; 
+
+    // Pre-conditions
+    if (FlagOn(Data->Iopb->OperationFlags, SL_OPEN_PAGING_FILE))
+    {
+        PrintMessage(("[%s] Skipping paging file\n", __func__));
+        goto PreCreateCleanup;
+    }
+    if (FlagOn(Data->Iopb->TargetFileObject->Flags, FO_VOLUME_OPEN))
+    {
+        PrintMessage(("[%s] Ignoring volume open\n", __func__));
+        goto PreCreateCleanup;
+    }
+    if (FlagOn(Data->Iopb->Parameters.Create.Options, FILE_OPEN_BY_FILE_ID))
+    {
+        PrintMessage(("[%s] Open file by ID not supported\n", __func__));
+        goto PreCreateCleanup;
+    }
+
+    // Get the open path
+    status = FltGetFileNameInformation(
+        Data, 
+        FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_FILESYSTEM_ONLY | FLT_FILE_NAME_DO_NOT_CACHE,
+        &nameInfo);
+    if (!NT_SUCCESS(status))
+    {
+        PrintError(("[%s] Failed to get file name info\n", __func__));
+        goto PreCreateCleanup;
+    }
+    PrintMessage(("[%s] Retrieved file info: %wZ", __func__, nameInfo->Name));
+    status = FltParseFileNameInformation(nameInfo);
+    if (!NT_SUCCESS(status))
+    {
+        PrintError(("[%s] File name info parsing failed for %wZ\n", __func__, nameInfo->Name));
+        goto PreCreateCleanup;
+    }
+
+    // If opening under remapped path then...
+    if (FlagOn(Data->Iopb->OperationFlags, SL_OPEN_TARGET_DIRECTORY))
+    {
+        ClearFlag(Data->Iopb->OperationFlags, SL_OPEN_TARGET_DIRECTORY);
+        FltReleaseFileNameInformation(nameInfo);
+        status = FltGetFileNameInformation(
+            Data,
+            FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_FILESYSTEM_ONLY,
+            &nameInfo);
+        SetFlag(Data->Iopb->OperationFlags, SL_OPEN_TARGET_DIRECTORY);
+    }
+
+    // Commu to user mode to get remapped path
+    // then replace Data->Iopb->TargetFileObject and
+    // set FltObjects->FileObject->RelatedFileObject = NULL;
+
+    // IsDirectory? FlagOn(Data->Iopb->Parameters.Create.Options, FILE_DIRECTORY_FILE)
+    // status = STATUS_REPARSE
+
+    //
+
+
+    //FltSetCallbackDataDirty() 
+PreCreateCleanup:
+    if (nameInfo != NULL)
+    {
+        FltReleaseFileNameInformation(nameInfo);
+    }
+    /*
+    if (status == STATUS_REPARSE)
+    {
+        // Abort this request and hopefully the application will re-create with the reparsed name and not filtered by 1fs later
+        // This requires manual attachment and difference volumes of src/dst
+        Data->IoStatus.Status = STATUS_REPARSE;
+        Data->IoStatus.Information = IO_REPARSE;
+        callbackStatus = FLT_PREOP_COMPLETE;
+    }
+    */
+    if (!NT_SUCCESS(status))
+    {
+        PrintWarning(("[%s] Pre-create failed with %08x", __func__, status));
+        Data->IoStatus.Status = status;
+        // Block the I/O request from propagating down
+        callbackStatus = FLT_PREOP_COMPLETE;
+    }
+
+    return callbackStatus;
+}
 
 /*************************************************************************
     MiniFilter callback routines.

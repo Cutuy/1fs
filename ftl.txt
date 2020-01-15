@@ -2,10 +2,36 @@ Effective knowledge finding > Personal organization vs public view of directory
 Parent: [vview]
 
 ## Objective
-[ftl-o1] Found the basis for 1fs impl as minifilter driver
+[ftl-o1 ✔] Found the basis for 1fs impl as minifilter driver
+<deferred>[flt-o2] Demo readonly pure virtual directory</deferred>
+[flt-o2] User-mode gets I/O info before file open reaches file system
 
 ## Key Results
 [ftl-o1-kr1 ✔] Set up kernel dbg environment
 [ftl-o1-kr2 ✔] Debug minispy from kernel mode
-[ftl-o1-kr2 🟢] Find out major functions involved in dir enum, file creation, and file read
+[ftl-o1-kr2 ✔] Find out major functions involved in dir enum, file creation, and file read
+<deferred>
+	[ftl-o2-kr1] Create communication between user/kernel mode, passing a list of (fake) entries to kernel mode
+	[ftl-o2-kr2] Impl callbacks for "dir" command which modifies enumeration result (find the sample)
+	[ftl-o2-kr3] [Bonus] Trigger a bugcheck
+</deferred>
+[ftl-o2-kr1] User/kernel mode establishes communication port with pre-defined msg format
+[flt-o2-kr2] I/O params send to user-mode during pre-create callback
+[flt-o2-kr3] Pre-create callback passes through or block any I/O
 
+## Notes (1/14)
+- Create user-mode process and commu with kernel-mode 1fs (Ftl*, Filter* APIs), sync wait
+- User-mode process does link state persistence and remap/repath queries
+- Kernel-mode filter pass requests (create, name server, dir control) to user-mode; kernel-mode could be stateless
+- Creating ftl-o2 to create MVP for a predefined remap (aka. ReplayProjections) demo
+- If enumerating NTFS in user-mode, make sure no recursive calls into kernel-mode filter (use 'assert')
+
+## Notes: How to debug
+- Set up sympath and srcpath
+- Clean install the minifilter (clean uninstall: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/using-an-inf-file-to-uninstall-a-file-system-filter-driver)
+- Before fltmc load, set up breakpoint by symbol (function name: e.g. bp/bu OneFsFilter!DriverEntry)
+- .reload /f
+
+## Notes (1/15)
+- Due to increased complexity, adding a intermediate objective which implements "intercept and pass" kernel-mode precreate callback, while 
+sending intercepted message to user-mode
